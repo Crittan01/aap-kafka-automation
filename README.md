@@ -3,8 +3,9 @@
 Automatización en Ansible Automation Platform de los procedimientos de **Failover**,
 **Failback** y **Rotación** sobre Kafka con MirrorMaker 2 en OpenShift.
 
-> **Fase actual: 1 — Failover CORE.** Certificada contra el laboratorio con ejecución real.
-> Lo demás está proyectado. Ver *Hoja de ruta*.
+> **Fase actual: 1 — Failover CORE.** Certificada de punta a punta en AWX: workflow completo
+> con nodo de aprobación, ejecución real contra el laboratorio en ambas direcciones, sin pérdida
+> ni duplicación de mensajes. Lo demás está proyectado. Ver *Hoja de ruta*.
 
 ---
 
@@ -259,6 +260,13 @@ de aplicaciones.
 | 6 | CORE ↔ Integrations | 1 — `mm2_repoint_source` |
 
 ---
+
+## Identidad en los clusters
+
+`rbac/` trae un `ServiceAccount` por sitio con el privilegio mínimo que la fase 1 necesita, para
+reemplazar el uso de credenciales de administrador. Es un `Role` acotado al namespace y **sin
+`delete` en ningún recurso**: el borrado de tópicos llega en la fase 2 y llevará una identidad
+separada. Ver `rbac/README.md`.
 
 ## Nota sobre `_contexto/`
 
