@@ -1,0 +1,74 @@
+---
+# Identidad de la automatizacion Kafka DR en el sitio CA.
+# Privilegio minimo derivado del codigo: solo lo que la fase 1 toca.
+# Aplicar en el cluster del sitio CA, namespace core-ca.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-dr
+  namespace: core-ca
+  labels:
+    app.kubernetes.io/name: kafka-dr
+    app.kubernetes.io/component: automation
+---
+# Token de larga duracion. Sin esto el token es de sesion y caduca en horas.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-dr-token
+  namespace: core-ca
+  annotations:
+    kubernetes.io/service-account.name: kafka-dr
+type: kubernetes.io/service-account-token
+---
+# Role, no ClusterRole: la automatizacion no puede ver nada fuera de core-ca.
+# Sin 'delete' en ningun recurso: el borrado de topicos es fase 2 y llevara
+# una identidad separada.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kafka-dr
+  namespace: core-ca
+rules:
+  # Salud del cluster Kafka
+  - apiGroups: ["kafka.strimzi.io"]
+    resources: ["kafkas"]
+    verbs: ["get", "list"]
+
+  # Estado del MirrorMaker y su inversion (spec.replicas 0 <-> 1)
+  - apiGroups: ["kafka.strimzi.io"]
+    resources: ["kafkamirrormaker2s"]
+    verbs: ["get", "list", "patch"]
+
+  # Destino del proxy (spec.targetKafkaServiceRef)
+  - apiGroups: ["kroxylicious.io"]
+    resources: ["virtualkafkaclusters"]
+    verbs: ["get", "list", "patch"]
+
+  # Precheck: que el KafkaService destino resuelva antes de conmutar
+  - apiGroups: ["kroxylicious.io"]
+    resources: ["kafkaservices"]
+    verbs: ["get", "list"]
+
+  # Medicion de offsets ejecutando en un broker
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kafka-dr
+  namespace: core-ca
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kafka-dr
+subjects:
+  - kind: ServiceAccount
+    name: kafka-dr
+    namespace: core-ca
