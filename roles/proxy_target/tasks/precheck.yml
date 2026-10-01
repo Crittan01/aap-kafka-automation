@@ -1,0 +1,28 @@
+---
+# El KafkaService destino debe resolver antes de tocar el trafico.
+# Sin esto el failover corta el trafico y despues falla.
+
+- name: Consultar el KafkaService destino
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.kroxylicious }}"
+    kind: KafkaService
+    name: "{{ _pt_destino }}"
+    namespace: "{{ _pt_px.namespace }}"
+    host: "{{ parejas[pareja].sitios[_pt_sitio].api }}"
+    api_key: "{{ kafka_tokens[_pt_sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _pt_r_dest
+  changed_when: false
+
+- name: Exigir que el destino resuelva
+  vars:
+    _pt_o: "{{ _pt_r_dest.resources | default([]) | first | default({}, true) }}"
+  ansible.builtin.assert:
+    that:
+      - _pt_r_dest.resources | length > 0
+      - >-
+        (_pt_o.status.conditions | default([]) | selectattr('type', 'eq', 'ResolvedRefs')
+         | map(attribute='status') | first | default('')) == 'True'
+    fail_msg: "El KafkaService {{ _pt_destino }} no resuelve. No se conmuta el trafico."
+    success_msg: "destino {{ _pt_destino }} resuelve"
+  when: umbrales.exigir_proxy_resolved_refs | bool

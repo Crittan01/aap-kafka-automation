@@ -1,0 +1,23 @@
+---
+argument_specs:
+  main:
+    short_description: Conmuta el destino del proxy Kroxylicious
+    description:
+      - Patch de targetKafkaServiceRef del VirtualKafkaCluster.
+      - Exige que el KafkaService destino resuelva antes de tocar el trafico.
+    options:
+      pareja:
+        type: str
+        required: true
+        description: Clave de la pareja en parejas.yml
+      kafka_plan:
+        type: dict
+        required: true
+        description: Plan resuelto que produce kafka_decide en modo proponer
+      kafka_tokens:
+        type: dict
+        required: true
+        description: Token de API por sitio
+      kafka_validate_certs:
+        type: bool
+        default: false

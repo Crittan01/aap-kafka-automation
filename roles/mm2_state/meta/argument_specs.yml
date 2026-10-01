@@ -1,0 +1,23 @@
+---
+argument_specs:
+  main:
+    short_description: Pone cada MirrorMaker en el estado que indica el plan
+    description:
+      - Patch idempotente de spec.replicas. No elimina ni crea recursos.
+      - El orden del plan importa, primero apagar y despues prender.
+    options:
+      pareja:
+        type: str
+        required: true
+        description: Clave de la pareja en parejas.yml
+      kafka_plan:
+        type: dict
+        required: true
+        description: Plan resuelto que produce kafka_decide en modo proponer
+      kafka_tokens:
+        type: dict
+        required: true
+        description: Token de API por sitio
+      kafka_validate_certs:
+        type: bool
+        default: false

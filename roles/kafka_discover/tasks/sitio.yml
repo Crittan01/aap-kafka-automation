@@ -1,0 +1,89 @@
+---
+# Kafka y proxy de un sitio. Un sitio caido no es un error: se reporta.
+
+- name: Fijar contexto del sitio
+  ansible.builtin.set_fact:
+    _kd_s: "{{ _kd_item.key }}"
+    _kd_cfg: "{{ _kd_item.value }}"
+    _kd_px: "{{ _kd_p.proxy[_kd_item.key] }}"
+    _kd_ksvc_rotos: []
+
+- name: Consultar cluster Kafka del sitio {{ _kd_s }}
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.kafka }}"
+    kind: Kafka
+    name: "{{ _kd_cfg.kafka }}"
+    namespace: "{{ _kd_cfg.namespace }}"
+    host: "{{ _kd_cfg.api }}"
+    api_key: "{{ kafka_tokens[_kd_s] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _kd_r_kafka
+  failed_when: false
+  changed_when: false
+
+- name: Consultar VirtualKafkaCluster del sitio {{ _kd_s }}
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.kroxylicious }}"
+    kind: VirtualKafkaCluster
+    name: "{{ _kd_px.vkc }}"
+    namespace: "{{ _kd_px.namespace }}"
+    host: "{{ _kd_cfg.api }}"
+    api_key: "{{ kafka_tokens[_kd_s] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _kd_r_vkc
+  failed_when: false
+  changed_when: false
+
+- name: Consultar KafkaService del sitio {{ _kd_s }}
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.kroxylicious }}"
+    kind: KafkaService
+    name: "{{ item.value }}"
+    namespace: "{{ _kd_px.namespace }}"
+    host: "{{ _kd_cfg.api }}"
+    api_key: "{{ kafka_tokens[_kd_s] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  loop: "{{ _kd_px.destinos | dict2items }}"
+  loop_control:
+    label: "{{ item.value }}"
+  register: _kd_r_ksvc
+  failed_when: false
+  changed_when: false
+
+- name: Medir offsets y replicacion en {{ _kd_s }}
+  ansible.builtin.include_tasks: lag.yml
+  when: medir_lag | bool
+
+- name: Detectar KafkaService sin resolver en {{ _kd_s }}
+  vars:
+    _kd_o: "{{ item.resources | default([]) | first | default({}, true) }}"
+  ansible.builtin.set_fact:
+    _kd_ksvc_rotos: "{{ (_kd_ksvc_rotos | default([])) + [item.item.value] }}"
+  loop: "{{ _kd_r_ksvc.results }}"
+  loop_control:
+    label: "{{ item.item.value }}"
+  when: >-
+    (_kd_o.status.conditions | default([]) | selectattr('type', 'eq', 'ResolvedRefs')
+     | map(attribute='status') | first | default('')) != 'True'
+
+- name: Consolidar estado del sitio {{ _kd_s }}
+  vars:
+    _kd_k: "{{ _kd_r_kafka.resources | default([]) | first | default({}, true) }}"
+    _kd_v: "{{ _kd_r_vkc.resources | default([]) | first | default({}, true) }}"
+    _kd_destino: "{{ _kd_v.spec.targetKafkaServiceRef.name | default('') }}"
+    _kd_dato:
+      alcanzable: "{{ _kd_r_kafka.resources is defined }}"
+      kafka_version: "{{ _kd_k.status.kafkaVersion | default('') }}"
+      kafka_ready: >-
+        {{ (_kd_k.status.conditions | default([]) | selectattr('type', 'eq', 'Ready')
+            | map(attribute='status') | first | default('')) == 'True' }}
+      proxy_destino: "{{ _kd_destino }}"
+      proxy_destino_sitio: >-
+        {{ _kd_px.destinos | dict2items | selectattr('value', 'eq', _kd_destino)
+           | map(attribute='key') | first | default('') }}
+      proxy_destinos_rotos: "{{ _kd_ksvc_rotos | default([]) }}"
+      proxy_redirigido: >-
+        {{ (_kd_px.destinos | dict2items | selectattr('value', 'eq', _kd_destino)
+            | map(attribute='key') | first | default('')) not in ['', _kd_s] }}
+  ansible.builtin.set_fact:
+    _kd_sitios: "{{ _kd_sitios | combine({_kd_s: _kd_dato}) }}"

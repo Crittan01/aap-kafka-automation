@@ -1,0 +1,11 @@
+---
+pareja: core
+
+# Tokens por sitio: { co: "sha256~...", ca: "sha256~..." }
+kafka_tokens: {}
+
+kafka_validate_certs: false
+
+# El lag consulta el Admin API de Kafka (exec en un broker). Se apaga
+# cuando solo interesa la topologia.
+medir_lag: true

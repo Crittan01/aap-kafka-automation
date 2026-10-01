@@ -1,0 +1,30 @@
+═══ pareja {{ kafka_estado.pareja }} ═══
+{% for s, d in kafka_estado.sitios.items() %}
+{{ s | upper }}{{ ' ← ACTIVO' if s == kafka_estado.activo else ' · pasivo' }}
+{% if not d.alcanzable | bool %}
+  INALCANZABLE
+{% else %}
+  Kafka  {{ d.kafka_version }}  ready={{ d.kafka_ready }}
+  Proxy  {{ d.proxy_destino }}{{ ' (sitio ' ~ d.proxy_destino_sitio ~ ')' if d.proxy_destino_sitio != s else '' }}
+{% if d.proxy_destinos_rotos %}
+  Proxy  sin resolver: {{ d.proxy_destinos_rotos | join(', ') }}
+{% endif %}
+{% endif %}
+{% endfor %}
+MIRRORMAKERS
+{% for m, d in kafka_estado.mirrormakers.items() %}
+  {{ '%-6s' | format(m) }} {{ '%-11s' | format(d.estado) }} vive_en={{ d.vive_en }}  conectores_ok={{ d.conectores_ok }}
+{% endfor %}
+{% if kafka_estado.replicacion.medida | bool %}
+REPLICACION  {{ 'al dia' if kafka_estado.replicacion.offsets[kafka_estado.activo] == kafka_estado.replicacion.offsets[kafka_estado.pasivo] else 'CON ATRASO' }}
+{% for k, v in kafka_estado.replicacion.offsets[kafka_estado.activo].items() %}
+  {{ k }}  activo={{ v }}  pasivo={{ kafka_estado.replicacion.offsets[kafka_estado.pasivo][k] | default('?') }}
+{% endfor %}
+{% endif %}
+COHERENCIA  {{ 'OK' if kafka_estado.coherente | bool else 'REVISAR' }}
+{% if kafka_estado.sitios_caidos %}
+  sitios caidos: {{ kafka_estado.sitios_caidos | join(', ') }}
+{% endif %}
+{% if kafka_estado.proxy_destinos_rotos %}
+  destinos de proxy sin resolver: {{ kafka_estado.proxy_destinos_rotos | join(', ') }}
+{% endif %}

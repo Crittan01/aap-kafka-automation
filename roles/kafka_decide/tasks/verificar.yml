@@ -1,0 +1,31 @@
+---
+# Compara el estado descubierto contra el bloque 'hasta' de la transicion.
+
+- name: Verificar estado final
+  vars:
+    _dc_esp: "{{ _dc_t.hasta }}"
+    _dc_esp_activo: "{{ _dc_sb if _dc_esp.activo == 'sitio_b' else _dc_sa }}"
+  ansible.builtin.assert:
+    that:
+      - kafka_estado.activo == _dc_esp_activo
+      - kafka_estado.mirrormakers[_dc_mm_hacia_b].estado == _dc_esp.mirrormakers.hacia_b
+      - kafka_estado.mirrormakers[_dc_mm_hacia_a].estado == _dc_esp.mirrormakers.hacia_a
+      - kafka_estado.sitios[_dc_sa].proxy_destino_sitio == _dc_esp_activo
+    fail_msg: |
+      El estado final no coincide con el esperado por la transicion {{ _dc_t.id }}.
+      activo        esperado={{ _dc_esp_activo }}  encontrado={{ kafka_estado.activo }}
+      {{ _dc_mm_hacia_b }}  esperado={{ _dc_esp.mirrormakers.hacia_b }}  encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_b].estado }}
+      {{ _dc_mm_hacia_a }}  esperado={{ _dc_esp.mirrormakers.hacia_a }}  encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_a].estado }}
+      proxy {{ _dc_sa }}   esperado={{ _dc_esp_activo }}  encontrado={{ kafka_estado.sitios[_dc_sa].proxy_destino_sitio }}
+      proxy {{ _dc_sb }}   informativo: {{ kafka_estado.sitios[_dc_sb].proxy_destino_sitio }}
+    success_msg: "Estado final correcto: activo={{ kafka_estado.activo }}"
+
+# FAILOVER solo declara el proxy del sitio que deja de ser activo. Si el otro
+# quedo redirigido se avisa, pero no se bloquea: devolverlo es parte del
+# failback, que es otra transicion.
+- name: Avisar si el proxy del otro sitio quedo redirigido
+  ansible.builtin.debug:
+    msg: >-
+      El proxy de {{ _dc_sb }} apunta a {{ kafka_estado.sitios[_dc_sb].proxy_destino_sitio }},
+      fuera de su sitio. Se devuelve en el failback.
+  when: kafka_estado.sitios[_dc_sb].proxy_redirigido | default(false) | bool

@@ -1,0 +1,79 @@
+---
+# Descubre el estado real de una pareja. Solo lectura.
+
+- name: Validar entrada
+  ansible.builtin.assert:
+    that:
+      - pareja in parejas
+      - kafka_tokens | length > 0
+    fail_msg: "Falta 'pareja' valida o 'kafka_tokens'"
+    quiet: true
+
+- name: Inicializar
+  ansible.builtin.set_fact:
+    _kd_p: "{{ parejas[pareja] }}"
+    _kd_sitios: {}
+    _kd_mms: {}
+
+- name: Descubrir sitios
+  ansible.builtin.include_tasks: sitio.yml
+  loop: "{{ parejas[pareja].sitios | dict2items }}"
+  loop_control:
+    loop_var: _kd_item
+    label: "{{ _kd_item.key }}"
+
+- name: Descubrir MirrorMakers
+  ansible.builtin.include_tasks: mirrormaker.yml
+  loop: "{{ parejas[pareja].mirrormakers | dict2items }}"
+  loop_control:
+    loop_var: _kd_item
+    label: "{{ _kd_item.key }}"
+
+# El activo se deriva del MirrorMaker encendido: es el que replica DESDE el activo.
+# El destino del proxy no sirve de senal: en estado normal cada proxy apunta
+# a su propio Kafka local.
+
+- name: Armar kafka_estado
+  vars:
+    _kd_activo: >-
+      {{ 'co' if _kd_mms.co_ca.estado == 'ACTIVO'
+         else ('ca' if _kd_mms.ca_co.estado == 'ACTIVO' else '') }}
+    _kd_caidos: >-
+      {{ _kd_sitios | dict2items | rejectattr('value.alcanzable')
+         | map(attribute='key') | list }}
+    _kd_rotos: >-
+      {{ _kd_sitios | dict2items | map(attribute='value.proxy_destinos_rotos')
+         | sum(start=[]) | unique | list }}
+    _kd_activos: >-
+      {{ _kd_mms | dict2items | selectattr('value.estado', 'eq', 'ACTIVO')
+         | map(attribute='key') | list }}
+    _kd_repl:
+      medida: "{{ (_kd_offsets | default({})) | length == 2 }}"
+      offsets: "{{ _kd_offsets | default({}) }}"
+      under_replicated: "{{ _kd_urp | default({}) }}"
+  ansible.builtin.set_fact:
+    kafka_estado:
+      pareja: "{{ pareja }}"
+      descubierto: "{{ lookup('pipe', 'date -u +%FT%TZ') }}"
+      activo: "{{ _kd_activo }}"
+      pasivo: "{{ 'ca' if _kd_activo == 'co' else ('co' if _kd_activo == 'ca' else '') }}"
+      sitios_caidos: "{{ _kd_caidos }}"
+      proxy_destinos_rotos: "{{ _kd_rotos }}"
+      coherente: >-
+        {{ _kd_caidos | length == 0 and _kd_rotos | length == 0
+           and _kd_activos | length == 1
+           and _kd_mms[_kd_activos | first].conectores_ok | bool }}
+      sitios: "{{ _kd_sitios }}"
+      mirrormakers: "{{ _kd_mms }}"
+      replicacion: "{{ _kd_repl }}"
+
+# Prefijo wf_: AAP inyecta los artifacts como extra_vars, que tienen mayor
+# precedencia que set_fact. Sin prefijo pisarian el fact interno en silencio.
+- name: Publicar estado como artifact del workflow
+  ansible.builtin.set_stats:
+    data:
+      wf_kafka_estado: "{{ kafka_estado }}"
+
+- name: Mostrar estado
+  ansible.builtin.debug:
+    msg: "{{ lookup('ansible.builtin.template', 'resumen.j2').split('\n') }}"

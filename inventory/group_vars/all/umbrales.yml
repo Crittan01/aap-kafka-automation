@@ -1,0 +1,18 @@
+---
+# Umbrales y tiempos. Sobreescribibles por survey o extra_vars.
+
+umbrales:
+  lag_maximo_mensajes: 0
+  mm2_ready_timeout: 180
+  mm2_ready_intervalo: 5
+  proxy_ready_timeout: 120
+  proxy_ready_intervalo: 5
+  exigir_sin_under_replicated: true
+  exigir_proxy_resolved_refs: true
+
+# Anclado a proposito: por kafka.strimzi.io/v1 el MirrorMaker no expone su
+# topologia y el discovery devuelve vacio sin error.
+api_versions:
+  mirrormaker2: kafka.strimzi.io/v1beta2
+  kafka: kafka.strimzi.io/v1beta2
+  kroxylicious: kroxylicious.io/v1alpha1

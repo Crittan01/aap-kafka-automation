@@ -1,0 +1,19 @@
+---
+# Pone cada MirrorMaker en el estado que indica el plan. Idempotente:
+# es un patch de spec.replicas, no un borrado y creacion.
+# El orden del plan importa: primero apagar, despues prender.
+
+- name: Validar que hay plan
+  ansible.builtin.assert:
+    that:
+      - kafka_plan is defined
+      - kafka_plan.acciones is defined
+    fail_msg: "mm2_state requiere kafka_plan (lo produce kafka_decide)"
+    quiet: true
+
+- name: Aplicar estado a cada MirrorMaker
+  ansible.builtin.include_tasks: aplicar.yml
+  loop: "{{ kafka_plan.acciones | selectattr('rol', 'eq', 'mm2_state') | list }}"
+  loop_control:
+    loop_var: _ms_acc
+    label: "{{ _ms_acc.sentido }} -> {{ _ms_acc.estado }}"

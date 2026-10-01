@@ -1,0 +1,43 @@
+---
+- name: Resolver el MirrorMaker de {{ _ms_acc.sentido }}
+  vars:
+    _ms_k: "{{ kafka_plan.mm_hacia_b if _ms_acc.sentido == 'hacia_b' else kafka_plan.mm_hacia_a }}"
+  ansible.builtin.set_fact:
+    _ms_mmk: "{{ _ms_k }}"
+    _ms_mmc: "{{ parejas[pareja].mirrormakers[_ms_k] }}"
+    _ms_replicas: "{{ 1 if _ms_acc.estado == 'ACTIVO' else 0 }}"
+
+- name: Aplicar el estado del plan al MirrorMaker {{ _ms_mmk }}
+  kubernetes.core.k8s:
+    api_version: "{{ api_versions.mirrormaker2 }}"
+    kind: KafkaMirrorMaker2
+    name: "{{ _ms_mmc.name }}"
+    namespace: "{{ _ms_mmc.namespace }}"
+    state: patched
+    # El dict completo va templado para que replicas llegue como entero:
+    # un escalar entre comillas se envia como cadena y el CRD lo rechaza.
+    definition: "{{ {'spec': {'replicas': _ms_replicas | int}} }}"
+    host: "{{ parejas[pareja].sitios[_ms_mmc.sitio].api }}"
+    api_key: "{{ kafka_tokens[_ms_mmc.sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+
+- name: Esperar reconciliacion del MirrorMaker {{ _ms_mmk }}
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.mirrormaker2 }}"
+    kind: KafkaMirrorMaker2
+    name: "{{ _ms_mmc.name }}"
+    namespace: "{{ _ms_mmc.namespace }}"
+    host: "{{ parejas[pareja].sitios[_ms_mmc.sitio].api }}"
+    api_key: "{{ kafka_tokens[_ms_mmc.sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _ms_w
+  until: >-
+    (_ms_w.resources | first).status.observedGeneration | default(0) | int
+    == (_ms_w.resources | first).metadata.generation | default(-1) | int
+    and ((_ms_w.resources | first).status.conditions | default([])
+         | selectattr('type', 'eq', 'Ready') | map(attribute='status')
+         | first | default('')) == 'True'
+  retries: "{{ (umbrales.mm2_ready_timeout / umbrales.mm2_ready_intervalo) | int }}"
+  delay: "{{ umbrales.mm2_ready_intervalo }}"
+  changed_when: false
+  when: not ansible_check_mode

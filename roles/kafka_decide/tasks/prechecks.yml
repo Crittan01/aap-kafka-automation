@@ -1,0 +1,47 @@
+---
+# Cada precheck corre solo si la transicion lo nombra. La seleccion vive en
+# transitions.yml; la implementacion, aca.
+
+- name: Precheck sitio destino alcanzable
+  ansible.builtin.assert:
+    that: kafka_estado.sitios[_dc_sb].alcanzable | bool
+    fail_msg: "El sitio destino {{ _dc_sb }} no responde"
+    success_msg: "sitio {{ _dc_sb }} alcanzable"
+  when: "'sitio_b_alcanzable' in _dc_t.prechecks"
+
+- name: Precheck Kafka destino listo
+  ansible.builtin.assert:
+    that: kafka_estado.sitios[_dc_sb].kafka_ready | bool
+    fail_msg: "El Kafka de {{ _dc_sb }} no esta Ready"
+    success_msg: "Kafka de {{ _dc_sb }} Ready"
+  when: "'sitio_b_kafka_ready' in _dc_t.prechecks"
+
+- name: Precheck sin particiones sub-replicadas en destino
+  ansible.builtin.assert:
+    that: not (kafka_estado.replicacion.under_replicated[_dc_sb] | default(false) | bool)
+    fail_msg: "El Kafka de {{ _dc_sb }} tiene particiones sub-replicadas"
+    success_msg: "sin particiones sub-replicadas en {{ _dc_sb }}"
+  when:
+    - "'sitio_b_sin_under_replicated' in _dc_t.prechecks"
+    - umbrales.exigir_sin_under_replicated | bool
+
+- name: Precheck replicacion al dia
+  ansible.builtin.assert:
+    that:
+      - kafka_estado.replicacion.medida | bool
+      - kafka_estado.replicacion.offsets[_dc_sa] == kafka_estado.replicacion.offsets[_dc_sb]
+    fail_msg: >-
+      La replicacion no esta al dia.
+      {{ _dc_sa }}={{ kafka_estado.replicacion.offsets[_dc_sa] | default('?') }}
+      {{ _dc_sb }}={{ kafka_estado.replicacion.offsets[_dc_sb] | default('?') }}
+    success_msg: "replicacion al dia"
+  when: "'replicacion_al_dia' in _dc_t.prechecks"
+
+- name: Precheck destino del proxy resuelve
+  ansible.builtin.assert:
+    that: parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] not in kafka_estado.sitios[_dc_sa].proxy_destinos_rotos
+    fail_msg: >-
+      El KafkaService {{ parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] }} del proxy de {{ _dc_sa }}
+      no resuelve. El failover fallaria al conmutar el trafico.
+    success_msg: "destino del proxy {{ parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] }} resuelve"
+  when: "'proxy_destino_b_resuelve' in _dc_t.prechecks"

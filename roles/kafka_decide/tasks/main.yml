@@ -1,0 +1,101 @@
+---
+# Busca la transicion en el contrato, la resuelve a acciones concretas y
+# decide si se puede avanzar. No escribe en los clusters.
+
+- name: Cargar contrato de transiciones
+  ansible.builtin.include_vars:
+    file: "{{ transiciones_file }}"
+    name: _dc_contrato
+
+- name: Seleccionar la transicion
+  vars:
+    _dc_candidatas: >-
+      {{ _dc_contrato.transiciones
+         | selectattr('operacion', 'eq', operacion)
+         | selectattr('aplica_a', 'contains', pareja) | list }}
+  ansible.builtin.set_fact:
+    _dc_t: "{{ _dc_candidatas | first | default({}, true) }}"
+
+- name: Detener si no hay transicion definida
+  ansible.builtin.fail:
+    msg: |
+      {{ _dc_contrato.politica_estado_desconocido.mensaje }}
+      operacion={{ operacion }} pareja={{ pareja }} activo={{ kafka_estado.activo | default('?') }}
+  when: _dc_t | length == 0
+
+- name: Resolver sitios y MirrorMakers desde el estado actual
+  ansible.builtin.set_fact:
+    _dc_sa: "{{ kafka_estado.activo }}"
+    _dc_sb: "{{ kafka_estado.pasivo }}"
+    _dc_mm_hacia_b: "{{ kafka_estado.activo }}_{{ kafka_estado.pasivo }}"
+    _dc_mm_hacia_a: "{{ kafka_estado.pasivo }}_{{ kafka_estado.activo }}"
+  when: modo == 'proponer'
+
+# En verificar los sitios salen del plan, no del estado nuevo: despues del
+# failover el activo cambio y re-derivarlos invertiria la expectativa.
+- name: Recuperar sitios del plan aprobado
+  ansible.builtin.set_fact:
+    _dc_sa: "{{ kafka_plan.sitio_a }}"
+    _dc_sb: "{{ kafka_plan.sitio_b }}"
+    _dc_mm_hacia_b: "{{ kafka_plan.mm_hacia_b }}"
+    _dc_mm_hacia_a: "{{ kafka_plan.mm_hacia_a }}"
+  when: modo == 'verificar'
+
+- name: Detener si falta el plan para verificar
+  ansible.builtin.fail:
+    msg: "modo=verificar requiere kafka_plan (lo produce kafka_decide en modo proponer)"
+  when:
+    - modo == 'verificar'
+    - kafka_plan is not defined
+
+- name: Detener si el estado actual no es el de partida
+  ansible.builtin.fail:
+    msg: |
+      {{ _dc_contrato.politica_estado_desconocido.mensaje }}
+      {{ _dc_mm_hacia_b }}  esperado={{ _dc_t.desde.mirrormakers.hacia_b }}
+         encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_b].estado }}
+      {{ _dc_mm_hacia_a }}  esperado={{ _dc_t.desde.mirrormakers.hacia_a }}
+         encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_a].estado }}
+  when:
+    - modo == 'proponer'
+    - kafka_estado.mirrormakers[_dc_mm_hacia_b].estado != _dc_t.desde.mirrormakers.hacia_b
+      or kafka_estado.mirrormakers[_dc_mm_hacia_a].estado != _dc_t.desde.mirrormakers.hacia_a
+
+- name: Ejecutar prechecks
+  ansible.builtin.include_tasks: prechecks.yml
+  when: modo == 'proponer'
+
+- name: Armar el plan
+  vars:
+    _dc_acciones: >-
+      {{ _dc_t.acciones | map('combine', {}) | list }}
+  ansible.builtin.set_fact:
+    kafka_plan:
+      transicion: "{{ _dc_t.id }}"
+      operacion: "{{ operacion }}"
+      pareja: "{{ pareja }}"
+      sitio_a: "{{ _dc_sa }}"
+      sitio_b: "{{ _dc_sb }}"
+      mm_hacia_b: "{{ _dc_mm_hacia_b }}"
+      mm_hacia_a: "{{ _dc_mm_hacia_a }}"
+      acciones: "{{ _dc_t.acciones }}"
+      esperado: "{{ _dc_t.hasta }}"
+  when: modo == 'proponer'
+
+# wf_kafka_plan viaja al siguiente Job Template del workflow. El failover lo
+# compara contra el plan que recalcula, para no ejecutar algo distinto de lo
+# que el operador aprobo.
+- name: Publicar el plan como artifact del workflow
+  ansible.builtin.set_stats:
+    data:
+      wf_kafka_plan: "{{ kafka_plan }}"
+  when: modo == 'proponer'
+
+- name: Mostrar la propuesta
+  ansible.builtin.debug:
+    msg: "{{ lookup('ansible.builtin.template', 'propuesta.j2').split('\n') }}"
+  when: modo == 'proponer'
+
+- name: Verificar el estado final
+  ansible.builtin.include_tasks: verificar.yml
+  when: modo == 'verificar'

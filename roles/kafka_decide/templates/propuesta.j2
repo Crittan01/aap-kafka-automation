@@ -1,0 +1,23 @@
+═══ PROPUESTA · {{ kafka_plan.transicion }} ═══
+
+ESTADO ENCONTRADO
+  activo: {{ kafka_estado.activo }}    pasivo: {{ kafka_estado.pasivo }}
+  {{ kafka_plan.mm_hacia_b }}: {{ kafka_estado.mirrormakers[kafka_plan.mm_hacia_b].estado }}    {{ kafka_plan.mm_hacia_a }}: {{ kafka_estado.mirrormakers[kafka_plan.mm_hacia_a].estado }}
+  proxy {{ kafka_plan.sitio_a }} -> {{ kafka_estado.sitios[kafka_plan.sitio_a].proxy_destino }}
+{% if kafka_estado.replicacion.medida | bool %}
+  replicacion: {{ 'al dia' if kafka_estado.replicacion.offsets[kafka_plan.sitio_a] == kafka_estado.replicacion.offsets[kafka_plan.sitio_b] else 'CON ATRASO' }}
+{% endif %}
+
+VOY A HACER
+{% for a in kafka_plan.acciones %}
+{% if a.rol == 'mm2_state' %}
+  {{ kafka_plan.mm_hacia_b if a.sentido == 'hacia_b' else kafka_plan.mm_hacia_a }} -> {{ a.estado }}
+{% elif a.rol == 'proxy_target' %}
+  proxy {{ kafka_plan.sitio_a }} -> Kafka de {{ kafka_plan.sitio_b }}
+{% endif %}
+{% endfor %}
+
+VA A QUEDAR
+  activo: {{ kafka_plan.sitio_b }}    pasivo: {{ kafka_plan.sitio_a }}
+
+PRECHECKS  todos superados

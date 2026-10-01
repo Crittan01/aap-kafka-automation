@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────
+#  Contexto de trabajo — NO se publica
+# ─────────────────────────────────────────────────────────────
+# Documentación del cliente, análisis, evidencia de discovery e
+# imágenes extraídas. Material confidencial Red Hat / BPD y notas
+# internas: vive local, no va al repo que consume AAP.
+_contexto/
+
+# ─────────────────────────────────────────────────────────────
+#  Credenciales — nunca
+# ─────────────────────────────────────────────────────────────
+kubeconfig*
+kc-*
+*.kubeconfig
+.vault_pass*
+vault.yml
+*token*
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# ─────────────────────────────────────────────────────────────
+#  Ansible
+# ─────────────────────────────────────────────────────────────
+*.retry
+collections/ansible_collections/
+roles/.galaxy_install_info
+.ansible/
+ansible-navigator.log
+*.log
+
+# ─────────────────────────────────────────────────────────────
+#  Entorno local
+# ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# ─────────────────────────────────────────────────────────────
+#  Fuera de la fase actual (fase 1 - Failover CORE)
+# ─────────────────────────────────────────────────────────────
+# Quitar la linea correspondiente al abrir cada fase.
+roles/topic_reset/
+roles/wait_replication_drained/
+roles/mm2_repoint_source/
+playbooks/failback.yml
+playbooks/rotacion.yml
+playbooks/detect.yml

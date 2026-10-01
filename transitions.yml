@@ -1,0 +1,66 @@
+---
+# Contrato de transiciones permitidas. Toda combinacion ausente es HARD STOP.
+# sitio_a = activo actual (descubierto); sitio_b = el otro.
+
+version: 1
+
+transiciones:
+
+  - id: FAILOVER
+    descripcion: El sitio activo no esta disponible; el pasivo asume.
+    operacion: failover
+    aplica_a:
+      - core
+
+    desde:
+      activo: sitio_a
+      mirrormakers:
+        hacia_b: ACTIVO
+        hacia_a: PASIVO
+      proxy_destino: sitio_a
+
+    prechecks:
+      - sitio_b_kafka_ready
+      - sitio_b_sin_under_replicated
+      - replicacion_al_dia
+      - proxy_destino_b_resuelve
+      - sitio_b_alcanzable
+
+    acciones:
+      - rol: mm2_state
+        sentido: hacia_b
+        estado: PASIVO
+      - rol: mm2_state
+        sentido: hacia_a
+        estado: ACTIVO
+      - rol: proxy_target
+        sitio: sitio_a
+        destino: sitio_b
+
+    gates:
+      - momento: antes_de_switch_trafico
+        muestra:
+          - estado_actual
+          - acciones
+          - estado_esperado
+          - resultado_prechecks
+
+    hasta:
+      activo: sitio_b
+      mirrormakers:
+        hacia_b: PASIVO
+        hacia_a: ACTIVO
+      proxy_destino: sitio_b
+
+politica_estado_desconocido:
+  accion: HARD_STOP
+  mensaje: >-
+    El estado descubierto no corresponde a ninguna transicion permitida.
+    El workflow se detiene sin interpretar ni corregir.
+
+politica_deriva:
+  accion: HARD_STOP
+  condicion: estado_declarado != estado_descubierto
+  mensaje: >-
+    El estado real no coincide con el ultimo registrado.
+    Requiere reconciliacion manual antes de operar.

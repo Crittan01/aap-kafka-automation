@@ -1,0 +1,57 @@
+---
+# Inventario de recursos por pareja. El rol activo NO se declara aca: se descubre.
+# Agregar Integrations (fase 4) es agregar un bloque, sin tocar codigo.
+
+parejas:
+
+  core:
+    descripcion: "Kafka del core bancario (Temenos)"
+
+    sitios:
+      co:
+        credencial: ocp-co
+        api: https://api.cluster-bvgj9.dyn.redhatworkshops.io:6443
+        namespace: core-co
+        kafka: bpd-kafka
+        bootstrap: bpd-kafka-kafka-bootstrap.core-co.svc:9092
+        broker_pod: bpd-kafka-kafka-3
+      ca:
+        credencial: ocp-ca
+        api: https://api.cluster-75wqq.dyn.redhatworkshops.io:6443
+        namespace: core-ca
+        kafka: bpd-kafka
+        bootstrap: bpd-kafka-kafka-bootstrap.core-ca.svc:9092
+        broker_pod: bpd-kafka-kafka-3
+
+    # El MirrorMaker vive en el sitio destino de la replicacion.
+    mirrormakers:
+      co_ca:
+        sitio: ca
+        namespace: core-ca
+        name: mirrormaker2-co-to-ca
+      ca_co:
+        sitio: co
+        namespace: core-co
+        name: mirrormaker2-ca-to-co
+
+    # Kroxylicious. Un proxy por sitio; el failover cambia targetKafkaServiceRef.
+    proxy:
+      co:
+        namespace: core-co
+        vkc: kafka-virtual-cluster
+        destinos:
+          co: kafka-co-srv
+          ca: kafka-ca-srv
+      ca:
+        namespace: core-ca
+        vkc: kafka-virtual-cluster
+        destinos:
+          co: kafka-co-srv
+          ca: kafka-ca-srv
+
+    # Lista explicita: la fase 2 borra topicos y no debe tocar los internos.
+    topicos_aplicacion:
+      - bpdtransactstreaming-event-topic
+
+    grupos_consumo:
+      - demo-consumer-group

@@ -1,0 +1,39 @@
+---
+# Consulta un MirrorMaker en el sitio donde vive.
+# api_version anclada: por v1 la topologia no aparece y el resultado sale vacio.
+
+- name: Fijar contexto del MirrorMaker
+  ansible.builtin.set_fact:
+    _kd_mm: "{{ _kd_item.key }}"
+    _kd_mc: "{{ _kd_item.value }}"
+
+- name: Consultar KafkaMirrorMaker2 {{ _kd_mm }}
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.mirrormaker2 }}"
+    kind: KafkaMirrorMaker2
+    name: "{{ _kd_mc.name }}"
+    namespace: "{{ _kd_mc.namespace }}"
+    host: "{{ _kd_p.sitios[_kd_mc.sitio].api }}"
+    api_key: "{{ kafka_tokens[_kd_mc.sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _kd_r_mm
+  failed_when: false
+  changed_when: false
+
+- name: Consolidar estado del MirrorMaker {{ _kd_mm }}
+  vars:
+    _kd_o: "{{ _kd_r_mm.resources | default([]) | first | default({}, true) }}"
+    _kd_cx: "{{ _kd_o.status.connectors | default([]) }}"
+    _kd_dato:
+      vive_en: "{{ _kd_mc.sitio }}"
+      replicas: "{{ _kd_o.spec.replicas | default(-1) | int }}"
+      estado: >-
+        {{ 'DESCONOCIDO' if _kd_r_mm.resources is not defined
+           else ('OFF' if _kd_r_mm.resources | length == 0
+           else ('ACTIVO' if _kd_o.spec.replicas | default(0) | int > 0 else 'PASIVO')) }}
+      conectores_ok: >-
+        {{ _kd_cx | length > 0 and (_kd_cx | selectattr('connector.state', 'eq', 'RUNNING')
+           | list | length) == (_kd_cx | length) }}
+      conectores: "{{ _kd_cx | length }}"
+  ansible.builtin.set_fact:
+    _kd_mms: "{{ _kd_mms | combine({_kd_mm: _kd_dato}) }}"

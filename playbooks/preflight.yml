@@ -1,0 +1,12 @@
+---
+# Simulacro: valida que la operacion seria posible. No escribe nada.
+# ansible-playbook playbooks/preflight.yml -e pareja=core -e operacion=failover
+
+- name: Simular la operacion
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: kafka_discover
+    - role: kafka_decide
+      modo: proponer

@@ -1,0 +1,10 @@
+---
+# Solo lectura. Muestra el estado real de una pareja.
+# ansible-playbook playbooks/discover.yml -e pareja=core
+
+- name: Descubrir estado de la pareja
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: kafka_discover

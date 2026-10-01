@@ -1,0 +1,9 @@
+---
+profile: production
+
+exclude_paths:
+  - _contexto/
+  - collections/
+
+skip_list:
+  - var-naming[no-role-prefix]
