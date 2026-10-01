@@ -17,7 +17,7 @@ MIRRORMAKERS
 {% endfor %}
 {% if kafka_estado.replicacion.medida | bool %}
 REPLICACION  {{ 'al dia' if kafka_estado.replicacion.offsets[kafka_estado.activo] == kafka_estado.replicacion.offsets[kafka_estado.pasivo] else 'CON ATRASO' }}
-{% for k, v in kafka_estado.replicacion.offsets[kafka_estado.activo].items() %}
+{% for k, v in kafka_estado.replicacion.offsets[kafka_estado.activo].items() -%}
   {{ k }}  activo={{ v }}  pasivo={{ kafka_estado.replicacion.offsets[kafka_estado.pasivo][k] | default('?') }}
 {% endfor %}
 {% endif %}

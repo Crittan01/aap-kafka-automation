@@ -25,16 +25,37 @@
     - "'sitio_b_sin_under_replicated' in _dc_t.prechecks"
     - umbrales.exigir_sin_under_replicated | bool
 
+# Atraso por particion entre el activo y el pasivo, contra lag_maximo_mensajes.
+- name: Fijar los offsets de ambos sitios
+  ansible.builtin.set_fact:
+    _dc_oa: "{{ kafka_estado.replicacion.offsets[_dc_sa] | default({}) }}"
+    _dc_ob: "{{ kafka_estado.replicacion.offsets[_dc_sb] | default({}) }}"
+    _dc_atraso: {}
+  when: "'replicacion_al_dia' in _dc_t.prechecks"
+
+- name: Calcular el atraso por particion
+  ansible.builtin.set_fact:
+    _dc_atraso: >-
+      {{ _dc_atraso | combine({item.key:
+         ((item.value | int) - (_dc_ob[item.key] | default(0) | int)) | abs}) }}
+  loop: "{{ _dc_oa | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: "'replicacion_al_dia' in _dc_t.prechecks"
+
 - name: Precheck replicacion al dia
+  vars:
+    _dc_atraso_max: "{{ _dc_atraso.values() | map('int') | list | max | default(0) }}"
   ansible.builtin.assert:
     that:
       - kafka_estado.replicacion.medida | bool
-      - kafka_estado.replicacion.offsets[_dc_sa] == kafka_estado.replicacion.offsets[_dc_sb]
+      - _dc_atraso_max | int <= umbrales.lag_maximo_mensajes | int
     fail_msg: >-
-      La replicacion no esta al dia.
+      Atraso de {{ _dc_atraso_max }} mensajes, supera el maximo de
+      {{ umbrales.lag_maximo_mensajes }}.
       {{ _dc_sa }}={{ kafka_estado.replicacion.offsets[_dc_sa] | default('?') }}
       {{ _dc_sb }}={{ kafka_estado.replicacion.offsets[_dc_sb] | default('?') }}
-    success_msg: "replicacion al dia"
+    success_msg: "replicacion al dia (atraso {{ _dc_atraso_max }} <= {{ umbrales.lag_maximo_mensajes }})"
   when: "'replicacion_al_dia' in _dc_t.prechecks"
 
 - name: Precheck destino del proxy resuelve

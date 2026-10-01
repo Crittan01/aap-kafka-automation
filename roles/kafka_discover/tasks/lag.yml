@@ -35,15 +35,12 @@
 
 - name: Consolidar offsets de {{ _kd_s }}
   vars:
-    # kafka-get-offsets devuelve lineas "topico:particion:offset"
-    _kd_lineas: >-
-      {{ _kd_r_off.results | map(attribute='stdout', default='')
-         | map('split', '\n') | sum(start=[]) | select('search', ':') | list }}
+    # kafka-get-offsets devuelve lineas "topico:particion:offset".
+    # Se unen con espacio y se extraen los pares con una sola expresion,
+    # para no depender de como venga el salto de linea.
+    _kd_pares: "{{ _kd_r_off.results | map(attribute='stdout', default='') | join(' ') | regex_findall('([^ :]+:[0-9]+):([0-9]+)') }}"
   ansible.builtin.set_fact:
-    _kd_offsets: >-
-      {{ _kd_offsets | default({}) | combine({_kd_s:
-         dict(_kd_lineas | map('regex_replace', '^([^:]+:[^:]+):.*$', '\1') | list
-              | zip(_kd_lineas | map('regex_replace', '^.*:', '') | map('int') | list)) }) }}
+    _kd_offsets: "{{ _kd_offsets | default({}) | combine({_kd_s: dict(_kd_pares)}) }}"
     _kd_urp: >-
       {{ _kd_urp | default({}) | combine({_kd_s:
          (_kd_r_urp.stdout | default('') | trim | length) > 0}) }}
