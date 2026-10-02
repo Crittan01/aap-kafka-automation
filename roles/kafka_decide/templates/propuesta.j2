@@ -14,6 +14,11 @@ VOY A HACER
   {{ kafka_plan.mm_hacia_b if a.sentido == 'hacia_b' else kafka_plan.mm_hacia_a }} -> {{ a.estado }}
 {% elif a.rol == 'proxy_target' %}
   proxy {{ kafka_plan.sitio_a }} -> Kafka de {{ kafka_plan.sitio_b }}
+{% elif a.rol == 'app_scale' %}
+{% set sitio = kafka_plan.sitio_a if a.sitio == 'sitio_a' else kafka_plan.sitio_b %}
+{% for app in parejas[kafka_plan.pareja].aplicaciones[sitio] | default([]) %}
+  {{ app.nombre }} en {{ sitio }} -> {{ app.replicas[a.estado] }} replicas
+{% endfor %}
 {% endif %}
 {% endfor %}
 

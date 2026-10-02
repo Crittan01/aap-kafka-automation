@@ -1,0 +1,44 @@
+---
+- name: Resolver el sitio a escalar
+  vars:
+    _as_s: "{{ kafka_plan.sitio_a if _as_acc.sitio == 'sitio_a' else kafka_plan.sitio_b }}"
+  ansible.builtin.set_fact:
+    _as_sitio: "{{ _as_s }}"
+    _as_apps: "{{ parejas[pareja].aplicaciones[_as_s] | default([]) }}"
+    _as_cfg: "{{ parejas[pareja].sitios[_as_s] }}"
+
+- name: Escalar aplicaciones en el sitio {{ _as_sitio }}
+  kubernetes.core.k8s:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item.nombre }}"
+    namespace: "{{ item.namespace }}"
+    state: patched
+    definition: "{{ {'spec': {'replicas': item.replicas[_as_acc.estado] | int}} }}"
+    host: "{{ _as_cfg.api }}"
+    api_key: "{{ kafka_tokens[_as_sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  loop: "{{ _as_apps }}"
+  loop_control:
+    label: "{{ item.nombre }} -> {{ item.replicas[_as_acc.estado] }}"
+
+- name: Esperar que las aplicaciones alcancen su estado en {{ _as_sitio }}
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item.nombre }}"
+    namespace: "{{ item.namespace }}"
+    host: "{{ _as_cfg.api }}"
+    api_key: "{{ kafka_tokens[_as_sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _as_w
+  until: >-
+    ((_as_w.resources | first).status.readyReplicas | default(0) | int)
+    == (item.replicas[_as_acc.estado] | int)
+  retries: "{{ (umbrales.app_ready_timeout / umbrales.app_ready_intervalo) | int }}"
+  delay: "{{ umbrales.app_ready_intervalo }}"
+  loop: "{{ _as_apps }}"
+  loop_control:
+    label: "{{ item.nombre }}"
+  changed_when: false
+  when: not ansible_check_mode

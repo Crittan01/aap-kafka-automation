@@ -64,6 +64,10 @@
       ansible.builtin.include_role:
         name: proxy_target
 
+    - name: Escalar aplicaciones
+      ansible.builtin.include_role:
+        name: app_scale
+
     - name: Descubrir estado final
       ansible.builtin.include_role:
         name: kafka_discover

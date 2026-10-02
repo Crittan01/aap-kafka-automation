@@ -1,0 +1,3 @@
+---
+# Consume kafka_plan. Las acciones vienen resueltas por kafka_decide.
+kafka_validate_certs: false

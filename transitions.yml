@@ -36,6 +36,12 @@ transiciones:
       - rol: proxy_target
         sitio: sitio_a
         destino: sitio_b
+      - rol: app_scale
+        sitio: sitio_a
+        estado: pasivo
+      - rol: app_scale
+        sitio: sitio_b
+        estado: activo
 
     gates:
       - momento: antes_de_switch_trafico

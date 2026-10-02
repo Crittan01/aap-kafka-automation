@@ -54,4 +54,16 @@ parejas:
       - bpdtransactstreaming-event-topic
 
     grupos_consumo:
-      - demo-consumer-group
+      - bpd-transact-consumer-group
+
+    # Aplicaciones que siguen el rol del sitio. El productor queda fuera a
+    # proposito: representa al core bancario, que conmuta por su cuenta.
+    aplicaciones:
+      co:
+        - nombre: kafka-consumer-app
+          namespace: core-co
+          replicas: { activo: 1, pasivo: 0 }
+      ca:
+        - nombre: kafka-consumer-app
+          namespace: core-ca
+          replicas: { activo: 1, pasivo: 0 }
