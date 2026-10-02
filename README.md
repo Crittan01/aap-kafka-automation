@@ -24,7 +24,7 @@ forma permanente. El activo se descubre en cada corrida.
 |---|---|---|
 | **Operaciones** | secuencia y aprobaciones | `playbooks/` + Workflows de AAP |
 | **Capacidades** | verbos atómicos y reutilizables | `roles/` |
-| **Datos** | quién es quién, qué se permite | `inventory/group_vars/`, `transitions.yml` |
+| **Datos** | quién es quién, qué se permite | `playbooks/group_vars/`, `transitions.yml` |
 
 Un rol nunca sabe que existe CORE. Recibe una pareja y actúa sobre ella.
 
@@ -40,22 +40,27 @@ Integrations son estructuralmente idénticas.
 ## Estructura
 
 ```
+transitions.yml      ★ el contrato — qué transiciones se permiten
 inventory/
   hosts.ini            localhost — todo corre desde el EE
-  group_vars/all/
-    parejas.yml      ★ quién es quién — namespaces, recursos, tópicos
-    umbrales.yml       timeouts, lag tolerado, versiones de API
-transitions.yml      ★ el contrato — qué transiciones se permiten
 playbooks/
   discover.yml         solo lectura
   preflight.yml        simulacro — ¿funcionaría hoy?
   failover.yml         la operación
+  group_vars/all/
+    parejas.yml      ★ quién es quién — namespaces, recursos, tópicos
+    umbrales.yml       timeouts, lag tolerado, versiones de API
 roles/
   kafka_discover/      lee el estado de una pareja, incluido el lag
   kafka_decide/        valida contra el contrato; propone o verifica
   mm2_state/           ESCRIBE — MirrorMaker activo/pasivo
   proxy_target/        ESCRIBE — destino del proxy
+rbac/                  ServiceAccount con privilegio mínimo, por sitio
 ```
+
+> Los `group_vars` van junto a los **playbooks**, no al inventario. AWX usa su propio
+> inventario y nunca leería `inventory/group_vars/`; adyacentes al playbook se cargan igual
+> en ejecución local y en AWX.
 
 **Solo dos roles escriben.** Los otros dos leen o calculan.
 
@@ -157,6 +162,19 @@ type propio; en local, por extra_vars o vault.
 | **Workflow** | `preflight` → **aprobación** → `failover` |
 | **Artifacts** | `preflight` publica `wf_kafka_estado` y `wf_kafka_plan` por `set_stats` |
 
+### Objetos configurados
+
+| Objeto | Detalle |
+|---|---|
+| Proyecto | Git, rama `develop`, sync al lanzar |
+| Credential type | `Kafka DR - Tokens de sitio` — inyecta `kafka_tokens` con el token de cada sitio |
+| Inventario | un único `localhost`; todo corre desde el EE contra las APIs |
+| Job Templates | `Discover`, `Preflight` (con survey), `Failover` (`exigir_plan_aprobado: true`) |
+| Workflow | los tres nodos encadenados, con aprobación de por medio |
+
+El *credential type* es un objeto de sistema: **requiere superusuario de AWX**, no alcanza con
+ser administrador de la organización.
+
 El operador no le dice a AAP qué hacer: AAP le dice qué encontró y qué propone, y el operador
 confirma. Así se elimina el error de ejecutar el escenario equivocado.
 
@@ -173,7 +191,17 @@ publican como `wf_kafka_estado` y `wf_kafka_plan`.
 después **compara** su plan recién calculado contra `wf_kafka_plan`. Si el estado cambió entre
 la aprobación y la ejecución, se detiene.
 
-Corrido fuera de un workflow la comparación se saltea, porque `wf_kafka_plan` no existe.
+Esa diferencia de comportamiento es **declarada, no inferida**, con la variable
+`exigir_plan_aprobado`:
+
+| | `false` — local | `true` — Job Template de AWX |
+|---|---|---|
+| El plan aprobado llega | se ignora | se compara |
+| El plan aprobado **no** llega | sigue, avisando que corre sin aprobación | **falla**: revisar el cableado del workflow |
+
+El caso que esto rescata es el de abajo a la derecha: un workflow mal cableado donde el
+artifact no llega, la comparación se saltearía en silencio y todos creerían que la validación
+corrió.
 
 ### Lo que ve el operador antes de aprobar
 
@@ -209,7 +237,7 @@ La transición los **nombra** en `transitions.yml`; la implementación vive en
 | `sitio_b_alcanzable` | el API del sitio destino responde |
 | `sitio_b_kafka_ready` | el Kafka destino está `Ready` |
 | `sitio_b_sin_under_replicated` | sin particiones sub-replicadas en el destino |
-| `replicacion_al_dia` | los offsets coinciden entre los dos sitios |
+| `replicacion_al_dia` | el atraso por partición no supera `lag_maximo_mensajes` |
 | `proxy_destino_b_resuelve` | el `KafkaService` destino tiene `ResolvedRefs: True` |
 
 > El último existe por un defecto real: el 29/09 los `KafkaService` que cruzan de sitio no
@@ -230,7 +258,8 @@ La transición los **nombra** en `transitions.yml`; la implementación vive en
 7. Los enteros van en un dict templado, no en un escalar entre comillas: `"{{ x | int }}"` se
    envía como cadena y el CRD lo rechaza con un 422.
 8. Tópicos por lista explícita, nunca patrón abierto.
-9. `ansible-lint` perfil `production` limpio antes de commitear.
+9. Los `group_vars` van junto al playbook, no al inventario: AWX usa el suyo.
+10. `ansible-lint` perfil `production` limpio antes de commitear.
 
 ---
 
