@@ -159,8 +159,8 @@ requiere privilegios de superusuario en la plataforma.
 
 ## Permisos requeridos
 
-`rbac/` contiene, por sitio, la identidad con la que la automatización se conecta al clúster y
-el conjunto mínimo de permisos que necesita.
+La automatización se conecta a cada clúster con una identidad propia. Estos son los accesos que
+requiere; su definición corresponde a quien administra el ambiente.
 
 | Recurso | Permisos |
 |---|---|
@@ -170,12 +170,16 @@ el conjunto mínimo de permisos que necesita.
 | Destinos del proxy | consultar |
 | Pods y ejecución en ellos | consultar y ejecutar, para medir el estado de la replicación |
 
-Dos propiedades deliberadas:
+Tres condiciones:
 
-- Los permisos están **acotados a los namespaces de la solución**. La automatización no tiene
-  visibilidad sobre el resto del clúster.
-- **No incluyen eliminación de ningún recurso.** Las operaciones que destruyen datos
-  corresponden al failback y llevarán una identidad separada.
+- **Acotado a los namespaces de la solución.** No se requiere visibilidad sobre el resto del
+  clúster, por lo que alcanza con permisos de namespace y no de clúster.
+- **Sin permiso de eliminación en ningún recurso.** Ninguna operación implementada destruye
+  datos. Las que sí lo harán corresponden a una identidad distinta.
+- **Credencial de larga duración**, para que el acceso sobreviva entre ejecuciones.
+
+`rbac/` incluye manifiestos de referencia que expresan lo anterior, disponibles para quien
+administre el ambiente.
 
 ---
 

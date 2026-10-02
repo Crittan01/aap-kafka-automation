@@ -1,7 +1,10 @@
 ---
+# MANIFIESTO DE REFERENCIA. Expresa los permisos que la automatizacion
+# requiere; la implementacion corresponde a quien administra el ambiente.
+#
 # Identidad de la automatizacion Kafka DR en el sitio CA.
 # Privilegio minimo derivado del codigo: solo lo que la fase 1 toca.
-# Aplicar en el cluster del sitio CA, namespace core-ca.
+# Namespace de referencia: el del sitio CA, namespace core-ca.
 
 apiVersion: v1
 kind: ServiceAccount

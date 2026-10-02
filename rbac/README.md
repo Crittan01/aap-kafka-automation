@@ -1,67 +1,44 @@
-# Identidad de la automatizacion
+# Permisos requeridos
 
-Un `ServiceAccount` por sitio con el privilegio minimo que la fase 1 necesita.
-Reemplaza el uso de credenciales de administrador del cluster.
+Especificación de los accesos que la automatización necesita para operar sobre un clúster.
+La definición de la identidad y su implementación corresponden a quien administra el ambiente.
 
-## Que incluye
+## Qué necesita acceder
 
-| Objeto | Para que |
-|---|---|
-| `ServiceAccount kafka-dr` | la identidad con la que AWX se conecta |
-| `Secret kafka-dr-token` | token de larga duracion; sin esto caduca en horas |
-| `Role kafka-dr` | los permisos, acotados al namespace |
-| `RoleBinding kafka-dr` | une los dos |
-
-## Permisos
-
-| Recurso | Verbos | Por que |
+| Recurso | Permisos | Para qué |
 |---|---|---|
-| `kafkas` | get, list | salud del cluster en el discovery |
-| `kafkamirrormaker2s` | get, list, **patch** | leer el estado e invertir la replicacion |
-| `virtualkafkaclusters` | get, list, **patch** | leer y conmutar el destino del proxy |
-| `kafkaservices` | get, list | precheck de que el destino resuelve |
-| `pods` | get, list | ubicar un broker |
-| `pods/exec` | create | medir offsets con el Admin API de Kafka |
+| `kafkas` | consultar | establecer si el clúster está operativo |
+| `kafkamirrormaker2s` | consultar y modificar | leer el estado de la replicación e invertirla |
+| `virtualkafkaclusters` | consultar y modificar | leer y conmutar el destino del tráfico |
+| `kafkaservices` | consultar | validar que el destino sea alcanzable antes de conmutar |
+| `pods` | consultar | ubicar un broker |
+| `pods/exec` | ejecutar | medir el estado de la replicación contra Kafka |
 
-**Es un `Role`, no un `ClusterRole`.** La automatizacion no puede ver nada fuera de su
-namespace.
+## Condiciones
 
-**No hay `delete` en ningun recurso.** El borrado de topicos es fase 2 y va a llevar una
-identidad separada, para que la credencial del failover no pueda borrar datos.
+**Acotado a los namespaces de la solución.** La automatización no requiere visibilidad sobre el
+resto del clúster, por lo que alcanza con permisos de namespace y no de clúster.
 
-## Aplicar
+**Sin permiso de eliminación en ningún recurso.** Ninguna operación implementada destruye datos.
+Las que sí lo harán —el failback elimina tópicos antes de resincronizar— corresponden a una
+identidad distinta, para que la credencial del failover no pueda borrar.
 
-Una vez por sitio, en su cluster correspondiente:
+**Credencial de larga duración.** Los tokens de sesión caducan y dejan la automatización
+inoperante; el acceso debe sobrevivir entre ejecuciones.
 
-```bash
-# cluster del sitio CO
-oc apply -f rbac/core-co.yaml
+## Manifiestos de referencia
 
-# cluster del sitio CA
-oc apply -f rbac/core-ca.yaml
+`core-co.yaml` y `core-ca.yaml` expresan lo anterior como `ServiceAccount`, `Role` y
+`RoleBinding`. Son una referencia: quien administre el ambiente puede usarlos, adaptarlos a sus
+convenciones de nombres y namespaces, o implementar lo mismo por otro medio.
+
+Lo que no cambia es la tabla de arriba.
+
+## Verificación
+
+Con la identidad ya definida, estas comprobaciones confirman que el alcance es el correcto:
+
 ```
-
-Requiere permisos de administrador **del namespace**, no del cluster.
-
-## Obtener el token
-
-```bash
-oc get secret kafka-dr-token -n core-co -o jsonpath='{.data.token}' | base64 -d
+puede modificar kafkamirrormaker2s   → debe dar sí
+puede eliminar  kafkatopics          → debe dar no
 ```
-
-Ese valor se carga en la credencial de AWX **Kafka DR - Tokens de sitio**, campo
-`Token sitio CO` (y el equivalente de CA). Una vez cargado, AWX lo guarda cifrado y no
-vuelve a mostrarlo.
-
-## Verificar que alcanza
-
-```bash
-oc auth can-i patch kafkamirrormaker2s -n core-co --as=system:serviceaccount:core-co:kafka-dr
-oc auth can-i delete kafkatopics      -n core-co --as=system:serviceaccount:core-co:kafka-dr   # debe dar no
-```
-
-## Nota para el ambiente del cliente
-
-Los namespaces `core-co` y `core-ca` son los del laboratorio. En el cliente hay que
-ajustarlos, pero los verbos y recursos son los mismos: **esta es la respuesta a "que permisos
-necesita la automatizacion"**.
