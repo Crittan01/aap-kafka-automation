@@ -13,6 +13,7 @@ correcto y confirmar el resultado.
 ## Cómo opera
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','fontSize':'14px'}}}%%
 flowchart TD
     OP([El operador solicita la operación]) --> DESC[Descubrir el estado real<br/>de ambos sitios]
     DESC --> COH{¿El estado es<br/>reconocible?}
@@ -31,11 +32,11 @@ flowchart TD
     EX3 --> VER[Verificar el estado final]
     VER --> FIN([Operación completa])
 
-    classDef paso    fill:#eef2f7,stroke:#5a6474,color:#111827
-    classDef decision fill:#e3eaf5,stroke:#2b46ae,color:#111827
-    classDef detiene fill:#fae0d8,stroke:#a13d12,color:#111827
-    classDef aprueba fill:#fbeed3,stroke:#8a5a00,color:#111827
-    classDef fin     fill:#d7efe2,stroke:#136c46,color:#111827
+    classDef paso     fill:#eef2f7,stroke:#5a6474,color:#111827,stroke-width:1px
+    classDef decision fill:#e3eaf5,stroke:#2b46ae,color:#111827,stroke-width:1px
+    classDef detiene  fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:1.5px
+    classDef aprueba  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
+    classDef fin      fill:#cdeadb,stroke:#136c46,color:#111827,stroke-width:1.5px
 
     class OP,DESC,PROP,EX1,EX2,EX3,VER paso
     class COH,VAL,PRE,REV decision
