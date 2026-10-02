@@ -31,12 +31,17 @@ flowchart TD
     EX3 --> VER[Verificar el estado final]
     VER --> FIN([Operación completa])
 
-    style S1 fill:#fae6dc,stroke:#a13d12
-    style S2 fill:#fae6dc,stroke:#a13d12
-    style S3 fill:#fae6dc,stroke:#a13d12
-    style S4 fill:#fae6dc,stroke:#a13d12
-    style APR fill:#fbeed3,stroke:#8a5a00
-    style FIN fill:#dcf0e5,stroke:#136c46
+    classDef paso    fill:#eef2f7,stroke:#5a6474,color:#111827
+    classDef decision fill:#e3eaf5,stroke:#2b46ae,color:#111827
+    classDef detiene fill:#fae0d8,stroke:#a13d12,color:#111827
+    classDef aprueba fill:#fbeed3,stroke:#8a5a00,color:#111827
+    classDef fin     fill:#d7efe2,stroke:#136c46,color:#111827
+
+    class OP,DESC,PROP,EX1,EX2,EX3,VER paso
+    class COH,VAL,PRE,REV decision
+    class S1,S2,S3,S4 detiene
+    class APR aprueba
+    class FIN fin
 ```
 
 Dos propiedades sostienen el diseño:
