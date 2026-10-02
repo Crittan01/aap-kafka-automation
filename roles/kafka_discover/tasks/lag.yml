@@ -18,6 +18,22 @@
   failed_when: false
   changed_when: false
 
+- name: Consultar el marcador de los grupos de consumo en {{ _kd_s }}
+  kubernetes.core.k8s_exec:
+    namespace: "{{ _kd_cfg.namespace }}"
+    pod: "{{ _kd_cfg.broker_pod }}"
+    container: kafka
+    command: >-
+      bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092
+      --describe --group {{ item }}
+    host: "{{ _kd_cfg.api }}"
+    api_key: "{{ kafka_tokens[_kd_s] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  loop: "{{ _kd_p.grupos_consumo | default([]) }}"
+  register: _kd_r_grp
+  failed_when: false
+  changed_when: false
+
 - name: Consultar particiones sub-replicadas en {{ _kd_s }}
   kubernetes.core.k8s_exec:
     namespace: "{{ _kd_cfg.namespace }}"
@@ -33,6 +49,22 @@
   failed_when: false
   changed_when: false
 
+- name: Extraer los marcadores de los grupos de consumo en {{ _kd_s }}
+  vars:
+    # cada linea: "grupo topico particion marcador fin lag ..."
+    _kd_salida: "{{ _kd_r_grp.results | map(attribute='stdout', default='') | join(' ') }}"
+    _kd_patron: '([a-z0-9][a-z0-9-]+) +([a-z0-9][a-z0-9.-]+) +([0-9]+) +([0-9]+) +[0-9]+ +[0-9-]+'
+    _kd_filas: "{{ _kd_salida | regex_findall(_kd_patron) }}"
+  ansible.builtin.set_fact:
+    _kd_marcadores: "{{ _kd_filas }}"
+
+- name: Consolidar marcadores de {{ _kd_s }}
+  ansible.builtin.set_fact:
+    _kd_m: "{{ (_kd_m | default({})) | combine({item[0] ~ '|' ~ item[1] ~ ':' ~ item[2]: item[3] | int}) }}"
+  loop: "{{ _kd_marcadores }}"
+  loop_control:
+    label: "{{ item[0] }} {{ item[1] }}:{{ item[2] }}"
+
 - name: Consolidar offsets de {{ _kd_s }}
   vars:
     # kafka-get-offsets devuelve lineas "topico:particion:offset".
@@ -41,6 +73,8 @@
     _kd_pares: "{{ _kd_r_off.results | map(attribute='stdout', default='') | join(' ') | regex_findall('([^ :]+:[0-9]+):([0-9]+)') }}"
   ansible.builtin.set_fact:
     _kd_offsets: "{{ _kd_offsets | default({}) | combine({_kd_s: dict(_kd_pares)}) }}"
+    _kd_grupos: "{{ _kd_grupos | default({}) | combine({_kd_s: _kd_m | default({})}) }}"
+    _kd_m: {}
     _kd_urp: >-
       {{ _kd_urp | default({}) | combine({_kd_s:
          (_kd_r_urp.stdout | default('') | trim | length) > 0}) }}

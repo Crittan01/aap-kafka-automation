@@ -20,6 +20,57 @@
       proxy {{ _dc_sb }}   informativo: {{ kafka_estado.sitios[_dc_sb].proxy_destino_sitio }}
     success_msg: "Estado final correcto: activo={{ kafka_estado.activo }}"
 
+# El estado de configuracion no alcanza: hay que comprobar que los datos
+# sobrevivieron y que los consumidores conservan su posicion.
+
+- name: Verificar que no se perdieron mensajes
+  vars:
+    _dc_antes: "{{ kafka_plan.datos_previos.offsets | default({}) }}"
+    _dc_ahora: "{{ kafka_estado.replicacion.offsets[_dc_sb] | default({}) }}"
+    _dc_faltantes: >-
+      {{ _dc_antes | dict2items
+         | rejectattr('key', 'in', _dc_ahora.keys() | list) | map(attribute='key') | list }}
+    _dc_menores: >-
+      {{ _dc_antes | dict2items
+         | selectattr('key', 'in', _dc_ahora.keys() | list)
+         | selectattr('value', 'gt', 0)
+         | map(attribute='key') | list
+         | select('in', _dc_ahora.keys() | list) | list }}
+  ansible.builtin.assert:
+    that:
+      - _dc_faltantes | length == 0
+    fail_msg: >-
+      Faltan particiones en el sitio que asume: {{ _dc_faltantes | join(', ') }}
+    success_msg: "Todas las particiones estan presentes en {{ _dc_sb }}"
+  when: kafka_plan.datos_previos is defined
+
+- name: Comprobar el recuento de mensajes por particion
+  ansible.builtin.assert:
+    that:
+      - (kafka_estado.replicacion.offsets[_dc_sb][item.key] | default(-1) | int) >= (item.value | int)
+    fail_msg: >-
+      Se perdieron mensajes en {{ item.key }}:
+      antes {{ item.value }}, ahora {{ kafka_estado.replicacion.offsets[_dc_sb][item.key] | default('ausente') }}
+    success_msg: "{{ item.key }}: {{ item.value }} -> {{ kafka_estado.replicacion.offsets[_dc_sb][item.key] }}"
+  loop: "{{ kafka_plan.datos_previos.offsets | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: kafka_plan.datos_previos is defined
+
+- name: Comprobar que los consumidores conservan su posicion
+  ansible.builtin.assert:
+    that:
+      - (kafka_estado.replicacion.grupos[_dc_sb][item.key] | default(-1) | int) >= (item.value | int)
+    fail_msg: >-
+      El grupo perdio su posicion en {{ item.key }}:
+      antes {{ item.value }}, ahora {{ kafka_estado.replicacion.grupos[_dc_sb][item.key] | default('ausente') }}.
+      Los consumidores reprocesarian desde el principio.
+    success_msg: "{{ item.key }}: marcador {{ item.value }} conservado"
+  loop: "{{ kafka_plan.datos_previos.grupos | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: kafka_plan.datos_previos is defined
+
 # FAILOVER solo declara el proxy del sitio que deja de ser activo. Si el otro
 # quedo redirigido se avisa, pero no se bloquea: devolverlo es parte del
 # failback, que es otra transicion.

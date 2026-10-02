@@ -147,7 +147,7 @@ Opera en dos momentos:
 | Momento | Qué hace |
 |---|---|
 | Antes de ejecutar | Corre las validaciones previas y arma el plan: qué recursos se tocarán, con qué valores y cuál es el resultado esperado |
-| Después de ejecutar | Compara el estado alcanzado contra el que la transición declaraba |
+| Después de ejecutar | Compara el estado alcanzado contra el que la transición declaraba, y contrasta los datos: que no falten particiones, que no se hayan perdido mensajes y que los consumidores conserven su posición |
 
 **No modifica nada.** Decide si se puede avanzar y qué debe ocurrir; la ejecución es de otros.
 
@@ -294,6 +294,8 @@ sin esa validación.
 | Al mover las aplicaciones | detiene antes de levantar, para que no procesen en paralelo |
 | Tras el cambio | los consumidores retoman en el mensaje donde quedaron |
 | Al terminar | confirma que el estado alcanzado es el declarado |
+| Sobre los datos | comprueba que ninguna partición falte ni haya perdido mensajes |
+| Sobre los consumidores | comprueba que conserven su posición y no reprocesen desde el principio |
 
 Toda modificación es un cambio de configuración declarativo y reversible. La automatización no
 elimina ni recrea recursos.

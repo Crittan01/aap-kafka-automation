@@ -50,6 +50,7 @@
     _kd_repl:
       medida: "{{ (_kd_offsets | default({})) | length == 2 }}"
       offsets: "{{ _kd_offsets | default({}) }}"
+      grupos: "{{ _kd_grupos | default({}) }}"
       under_replicated: "{{ _kd_urp | default({}) }}"
   ansible.builtin.set_fact:
     kafka_estado:

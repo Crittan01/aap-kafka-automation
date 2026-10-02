@@ -80,6 +80,10 @@
       mm_hacia_a: "{{ _dc_mm_hacia_a }}"
       acciones: "{{ _dc_t.acciones }}"
       esperado: "{{ _dc_t.hasta }}"
+      # Fotografia de los datos al decidir, para contrastar al terminar.
+      datos_previos:
+        offsets: "{{ kafka_estado.replicacion.offsets[_dc_sa] | default({}) }}"
+        grupos: "{{ kafka_estado.replicacion.grupos[_dc_sa] | default({}) }}"
   when: modo == 'proponer'
 
 # wf_kafka_plan viaja al siguiente Job Template del workflow. El failover lo
