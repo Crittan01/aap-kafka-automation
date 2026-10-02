@@ -1,304 +1,194 @@
-# Automatización Kafka Activo/Pasivo — AAP
+# Automatización de Failover — Kafka Activo/Pasivo
 
-Automatización en Ansible Automation Platform de los procedimientos de **Failover**,
-**Failback** y **Rotación** sobre Kafka con MirrorMaker 2 en OpenShift.
+Automatiza en Ansible Automation Platform el procedimiento de **failover** entre los dos sitios
+de un clúster Kafka activo/pasivo sobre OpenShift: invierte la replicación de MirrorMaker 2 y
+conmuta el tráfico hacia el sitio que asume la operación.
 
-> **Fase actual: 1 — Failover CORE.** Certificada de punta a punta en AWX: workflow completo
-> con nodo de aprobación, ejecución real contra el laboratorio en ambas direcciones, sin pérdida
-> ni duplicación de mensajes. Lo demás está proyectado. Ver *Hoja de ruta*.
+La decisión de ejecutar un failover sigue siendo del operador. Lo que se automatiza es todo lo
+demás: establecer el estado real, verificar que la operación sea posible, aplicarla en el orden
+correcto y confirmar el resultado.
 
 ---
 
-## Principio de diseño
+## Cómo opera
 
-AAP no ejecuta una receta a ciegas. **Descubre** el estado real, lo **valida** contra un contrato
-de transiciones permitidas, le **propone** al operador qué va a hacer, ejecuta y **verifica**.
-Si encuentra un estado que no reconoce, se detiene.
+```mermaid
+flowchart TD
+    OP([El operador solicita la operación]) --> DESC[Descubrir el estado real<br/>de ambos sitios]
+    DESC --> COH{¿El estado es<br/>reconocible?}
+    COH -->|no| S1([Se detiene])
+    COH -->|sí| VAL{¿La transición<br/>está permitida?}
+    VAL -->|no| S2([Se detiene])
+    VAL -->|sí| PRE{Validaciones<br/>previas}
+    PRE -->|alguna falla| S3([Se detiene])
+    PRE -->|todas pasan| PROP[Propuesta:<br/>estado actual, cambios y resultado esperado]
+    PROP --> APR{{Aprobación del operador}}
+    APR --> REV{¿El estado sigue<br/>siendo el aprobado?}
+    REV -->|cambió| S4([Se detiene])
+    REV -->|coincide| EX1[Apagar la replicación en curso]
+    EX1 --> EX2[Activar la replicación inversa]
+    EX2 --> EX3[Conmutar el destino del tráfico]
+    EX3 --> VER[Verificar el estado final]
+    VER --> FIN([Operación completa])
 
-Nada asume quién es el sitio activo: después de una rotación los roles quedan invertidos de
-forma permanente. El activo se descubre en cada corrida.
+    style S1 fill:#fae6dc,stroke:#a13d12
+    style S2 fill:#fae6dc,stroke:#a13d12
+    style S3 fill:#fae6dc,stroke:#a13d12
+    style S4 fill:#fae6dc,stroke:#a13d12
+    style APR fill:#fbeed3,stroke:#8a5a00
+    style FIN fill:#dcf0e5,stroke:#136c46
+```
 
-### Tres capas
+Dos propiedades sostienen el diseño:
 
-| Capa | Qué es | Dónde |
-|---|---|---|
-| **Operaciones** | secuencia y aprobaciones | `playbooks/` + Workflows de AAP |
-| **Capacidades** | verbos atómicos y reutilizables | `roles/` |
-| **Datos** | quién es quién, qué se permite | `playbooks/group_vars/`, `transitions.yml` |
+**No se asume quién es el sitio activo.** Se descubre en cada ejecución, a partir de qué
+MirrorMaker está replicando. Tras una rotación de roles los sitios quedan invertidos de forma
+permanente, y la automatización lo refleja sin cambios de configuración.
 
-Un rol nunca sabe que existe CORE. Recibe una pareja y actúa sobre ella.
+**Ante un estado que no reconoce, se detiene.** No interpreta, no corrige, no improvisa. El
+conjunto de transiciones válidas es explícito; cualquier combinación fuera de él interrumpe la
+operación.
 
-### La abstracción: *pareja*
+---
 
-Una pareja son dos Kafka en sitios opuestos con sus dos MirrorMaker y su proxy. CORE e
-Integrations son estructuralmente idénticas.
+## Alcance
 
-**Agregar Integrations (fase 4) es agregar un bloque a `parejas.yml`, sin código nuevo.**
+La unidad sobre la que opera es una **pareja**: dos clústeres Kafka en sitios opuestos, con sus
+dos MirrorMaker y su proxy.
+
+| | |
+|---|---|
+| **Implementado** | Failover de una pareja |
+| **Previsto** | Failback, rotación programada de roles, y parejas adicionales |
+
+Incorporar una pareja adicional es agregar un bloque de datos: la automatización no contiene
+referencias a ninguna pareja en particular.
 
 ---
 
 ## Estructura
 
 ```
-transitions.yml      ★ el contrato — qué transiciones se permiten
+transitions.yml          contrato de transiciones permitidas
 inventory/
-  hosts.ini            localhost — todo corre desde el EE
+  hosts.ini
 playbooks/
-  discover.yml         solo lectura
-  preflight.yml        simulacro — ¿funcionaría hoy?
-  failover.yml         la operación
+  discover.yml           consulta el estado, sin modificar nada
+  preflight.yml          valida la operación y arma la propuesta
+  failover.yml           ejecuta y verifica
   group_vars/all/
-    parejas.yml      ★ quién es quién — namespaces, recursos, tópicos
-    umbrales.yml       timeouts, lag tolerado, versiones de API
+    parejas.yml          definición de cada pareja
+    umbrales.yml         tolerancias y tiempos de espera
 roles/
-  kafka_discover/      lee el estado de una pareja, incluido el lag
-  kafka_decide/        valida contra el contrato; propone o verifica
-  mm2_state/           ESCRIBE — MirrorMaker activo/pasivo
-  proxy_target/        ESCRIBE — destino del proxy
-rbac/                  ServiceAccount con privilegio mínimo, por sitio
+  kafka_discover/        establece el estado real de ambos sitios
+  kafka_decide/          valida contra el contrato; propone o verifica
+  mm2_state/             modifica el estado de un MirrorMaker
+  proxy_target/          conmuta el destino del tráfico
+rbac/                    permisos requeridos en cada clúster
 ```
 
-> Los `group_vars` van junto a los **playbooks**, no al inventario. AWX usa su propio
-> inventario y nunca leería `inventory/group_vars/`; adyacentes al playbook se cargan igual
-> en ejecución local y en AWX.
-
-**Solo dos roles escriben.** Los otros dos leen o calculan.
+De los cuatro roles, **solo dos modifican el ambiente**. Los otros dos consultan y calculan.
 
 ---
 
-## Contratos de datos
+## Configuración
 
-Los roles se comunican por dos estructuras. Son el contrato interno del proyecto.
+Dos archivos concentran todo lo que cambia entre ambientes. Los roles no contienen nombres de
+recursos ni rutas.
 
-### `kafka_estado` — lo produce `kafka_discover`
+### `parejas.yml` — qué existe y dónde
 
-```yaml
-kafka_estado:
-  pareja: core
-  descubierto: "2026-09-30T18:42:11Z"
-  activo: co                      # derivado del MirrorMaker encendido
-  pasivo: ca
-  coherente: true                 # bool — ningún sitio caído, un solo MM activo y sano
-  sitios_caidos: []
-  proxy_destinos_rotos: []        # KafkaService con ResolvedRefs != True
-  sitios:
-    co:
-      alcanzable: true
-      kafka_ready: true
-      kafka_version: "4.1.0"
-      proxy_destino: kafka-co-srv
-      proxy_destino_sitio: co
-      proxy_redirigido: false     # apunta fuera de su propio sitio
-      proxy_destinos_rotos: []
-    ca: { ... }
-  mirrormakers:
-    co_ca:
-      vive_en: ca                 # el MM vive en el sitio DESTINO
-      estado: ACTIVO              # ACTIVO | PASIVO | OFF | DESCONOCIDO
-      replicas: "1"
-      conectores_ok: true
-      conectores: 2
-    ca_co: { ... }
-  replicacion:
-    medida: true
-    offsets:                      # por sitio, clave "topico:particion"
-      co: { "bpdtransactstreaming-event-topic:0": 26 }
-      ca: { "bpdtransactstreaming-event-topic:0": 26 }
-    under_replicated: { co: false, ca: false }
-```
+Por cada pareja: los dos sitios con su API y namespace, los dos MirrorMaker con el sitio donde
+reside cada uno, el proxy y sus destinos posibles, y la lista de tópicos de aplicación.
 
-**Estados del MirrorMaker.** `OFF` es "el recurso no existe"; `DESCONOCIDO` es "no pude
-consultarlo porque el sitio no responde". No son lo mismo y confundirlos haría decidir sobre
-información que no se tiene.
+El MirrorMaker reside siempre en el sitio **destino** de la replicación, no en el origen.
 
-### `kafka_plan` — lo produce `kafka_decide` en `modo: proponer`
+### `transitions.yml` — qué está permitido
 
-```yaml
-kafka_plan:
-  transicion: FAILOVER
-  operacion: failover
-  pareja: core
-  sitio_a: co                     # activo al momento de decidir
-  sitio_b: ca                     # destino
-  mm_hacia_b: co_ca               # el MM resuelto a nombre concreto
-  mm_hacia_a: ca_co
-  acciones: [ ... ]               # copiadas de transitions.yml
-  esperado: { ... }               # el bloque 'hasta' de la transición
-```
+Por cada transición: el estado de partida, las validaciones exigidas, las acciones a aplicar y
+el estado esperado al terminar. Una transición no declarada aquí no puede ejecutarse.
 
-Los roles que escriben consumen `kafka_plan`: no deciden nada, ejecutan un plan resuelto.
+Es el documento que se revisa con arquitectura y con auditoría: describe el comportamiento
+completo de la automatización sin leer código.
 
-**`modo: verificar` lee los sitios del plan, no del estado nuevo.** Después del failover el
-activo cambió; re-derivarlos invertiría la expectativa y daría un falso negativo.
+### `umbrales.yml` — tolerancias
+
+Atraso de replicación admitido, tiempos de espera y condiciones de salud exigidas. Ajustables
+por ambiente sin tocar la lógica.
 
 ---
 
-## Uso
+## Validaciones previas
 
-```bash
-ansible-galaxy collection install -r collections/requirements.yml
+La transición declara cuáles exige. Si alguna falla, no se modifica nada.
 
-# Solo lectura — el estado real en pantalla
-ansible-playbook playbooks/discover.yml -e pareja=core
+| Validación | Qué exige |
+|---|---|
+| Sitio destino alcanzable | su API responde |
+| Kafka destino operativo | el clúster reporta estado correcto |
+| Sin particiones sub-replicadas | el destino está íntegro |
+| Replicación al día | el atraso no supera el umbral configurado |
+| Destino de tráfico resoluble | la configuración del proxy apunta a un destino válido |
 
-# Simulacro — valida y propone, sin tocar nada
-ansible-playbook playbooks/preflight.yml -e pareja=core -e operacion=failover
-
-# La operación (en AAP va con nodo de aprobación)
-ansible-playbook playbooks/failover.yml -e pareja=core
-```
-
-Los tokens se pasan como `kafka_tokens: { co: ..., ca: ... }`. En AAP los inyecta un credential
-type propio; en local, por extra_vars o vault.
+La última evita el modo de falla más costoso: cortar el tráfico y descubrir después que el
+destino no era alcanzable.
 
 ---
 
-## En AAP
+## Operación en AAP
+
+El flujo se ejecuta como un workflow de tres pasos: **validación → aprobación → ejecución**.
+
+El operador declara únicamente la intención — qué pareja y qué operación. **El sitio destino y
+el escenario los determina la automatización**, y el operador los confirma al aprobar. Eso
+elimina la posibilidad de ejecutar el escenario equivocado.
+
+Antes de aprobar, el operador recibe el estado encontrado, los cambios que se aplicarán y el
+resultado esperado.
+
+El plan aprobado acompaña a la ejecución. Antes de modificar nada, la automatización vuelve a
+establecer el estado y **comprueba que siga coincidiendo con lo aprobado**: si algo cambió entre
+la aprobación y la ejecución, se detiene.
+
+### Credenciales
+
+Un tipo de credencial propio entrega a la automatización el acceso a cada sitio. Su creación
+requiere privilegios de superusuario en la plataforma.
+
+---
+
+## Permisos requeridos
+
+`rbac/` contiene, por sitio, la identidad con la que la automatización se conecta al clúster y
+el conjunto mínimo de permisos que necesita.
+
+| Recurso | Permisos |
+|---|---|
+| Clúster Kafka | consultar |
+| MirrorMaker | consultar y modificar |
+| Configuración del proxy | consultar y modificar |
+| Destinos del proxy | consultar |
+| Pods y ejecución en ellos | consultar y ejecutar, para medir el estado de la replicación |
+
+Dos propiedades deliberadas:
+
+- Los permisos están **acotados a los namespaces de la solución**. La automatización no tiene
+  visibilidad sobre el resto del clúster.
+- **No incluyen eliminación de ningún recurso.** Las operaciones que destruyen datos
+  corresponden al failback y llevarán una identidad separada.
+
+---
+
+## Garantías
 
 | | |
 |---|---|
-| **Credenciales** | una por sitio (`ocp-co`, `ocp-ca`). Ningún Job Template que escriba recibe acceso a los dos |
-| **Survey** | solo la intención (`operacion`, `pareja`). El sitio destino y el escenario los determina el discovery |
-| **Workflow** | `preflight` → **aprobación** → `failover` |
-| **Artifacts** | `preflight` publica `wf_kafka_estado` y `wf_kafka_plan` por `set_stats` |
+| Ante un estado desconocido | se detiene sin modificar nada |
+| Ante una validación fallida | se detiene antes de la primera escritura |
+| Si el estado cambió tras la aprobación | se detiene |
+| Al invertir la replicación | apaga antes de activar, para no duplicar mensajes |
+| Al conmutar el tráfico | verifica el destino antes de cortar el origen |
+| Al terminar | confirma que el estado alcanzado es el declarado |
 
-### Objetos configurados
-
-| Objeto | Detalle |
-|---|---|
-| Proyecto | Git, rama `develop`, sync al lanzar |
-| Credential type | `Kafka DR - Tokens de sitio` — inyecta `kafka_tokens` con el token de cada sitio |
-| Inventario | un único `localhost`; todo corre desde el EE contra las APIs |
-| Job Templates | `Discover`, `Preflight` (con survey), `Failover` (`exigir_plan_aprobado: true`) |
-| Workflow | los tres nodos encadenados, con aprobación de por medio |
-
-El *credential type* es un objeto de sistema: **requiere superusuario de AWX**, no alcanza con
-ser administrador de la organización.
-
-El operador no le dice a AAP qué hacer: AAP le dice qué encontró y qué propone, y el operador
-confirma. Así se elimina el error de ejecutar el escenario equivocado.
-
-### Por qué los artifacts llevan prefijo `wf_`
-
-AAP inyecta los `set_stats` del nodo anterior como **extra_vars**, que tienen mayor precedencia
-que `set_fact`. Un artifact llamado `kafka_plan` pisaría en silencio el fact interno que
-`kafka_decide` acaba de calcular, y se ejecutaría el plan viejo. Por eso los artifacts se
-publican como `wf_kafka_estado` y `wf_kafka_plan`.
-
-### Doble validación antes de escribir
-
-`failover.yml` no confía en el plan aprobado: vuelve a descubrir y a decidir por su cuenta, y
-después **compara** su plan recién calculado contra `wf_kafka_plan`. Si el estado cambió entre
-la aprobación y la ejecución, se detiene.
-
-Esa diferencia de comportamiento es **declarada, no inferida**, con la variable
-`exigir_plan_aprobado`:
-
-| | `false` — local | `true` — Job Template de AWX |
-|---|---|---|
-| El plan aprobado llega | se ignora | se compara |
-| El plan aprobado **no** llega | sigue, avisando que corre sin aprobación | **falla**: revisar el cableado del workflow |
-
-El caso que esto rescata es el de abajo a la derecha: un workflow mal cableado donde el
-artifact no llega, la comparación se saltearía en silencio y todos creerían que la validación
-corrió.
-
-### Lo que ve el operador antes de aprobar
-
-```
-═══ PROPUESTA · FAILOVER ═══
-
-ESTADO ENCONTRADO
-  activo: co    pasivo: ca
-  co_ca: ACTIVO    ca_co: PASIVO
-  proxy co -> kafka-co-srv
-  replicacion: al dia
-
-VOY A HACER
-  co_ca -> PASIVO
-  ca_co -> ACTIVO
-  proxy co -> Kafka de ca
-
-VA A QUEDAR
-  activo: ca    pasivo: co
-
-PRECHECKS  todos superados
-```
-
----
-
-## Prechecks
-
-La transición los **nombra** en `transitions.yml`; la implementación vive en
-`kafka_decide/tasks/prechecks.yml`.
-
-| Precheck | Qué exige |
-|---|---|
-| `sitio_b_alcanzable` | el API del sitio destino responde |
-| `sitio_b_kafka_ready` | el Kafka destino está `Ready` |
-| `sitio_b_sin_under_replicated` | sin particiones sub-replicadas en el destino |
-| `replicacion_al_dia` | el atraso por partición no supera `lag_maximo_mensajes` |
-| `proxy_destino_b_resuelve` | el `KafkaService` destino tiene `ResolvedRefs: True` |
-
-> El último existe por un defecto real: el 29/09 los `KafkaService` que cruzan de sitio no
-> resolvían. Un failover habría cortado el tráfico y después fallado.
-
----
-
-## Reglas de construcción
-
-1. Nada de `CO` ni `CA` escrito en los roles. Son datos.
-2. La matriz vive en `transitions.yml`, no en condicionales.
-3. Variables internas prefijadas por rol (`_kd_`, `_dc_`, `_ms_`, `_pt_`). `set_fact` tiene mayor
-   precedencia que las vars de tarea: sin prefijo, un rol contamina al siguiente.
-4. Idempotente: `replicas: 0` antes que eliminar; `state: patched`, nunca `oc edit`.
-5. Todo soporta `check_mode` — es lo que hace posible el simulacro.
-6. **Anclar `kafka.strimzi.io/v1beta2`** en toda consulta y patch de MirrorMaker. Leído por `v1`
-   la topología **no existe** y el discovery devuelve vacío *sin dar error*.
-7. Los enteros van en un dict templado, no en un escalar entre comillas: `"{{ x | int }}"` se
-   envía como cadena y el CRD lo rechaza con un 422.
-8. Tópicos por lista explícita, nunca patrón abierto.
-9. Los `group_vars` van junto al playbook, no al inventario: AWX usa el suyo.
-10. `ansible-lint` perfil `production` limpio antes de commitear.
-
----
-
-## Alcance de la fase 1
-
-**Cubre:** descubrir el estado, validar la transición, correr los prechecks, proponer, invertir
-los MirrorMaker, conmutar el proxy y verificar el resultado.
-
-**No cubre:** volver. Correr `failover.yml` dos veces **no es un failback** — la transición
-FAILOVER solo declara el proxy del sitio que deja de ser activo, así que el otro queda
-redirigido. Devolverlo es parte del failback, que es otra transición con acciones propias.
-
-Tampoco cubre el borrado de tópicos, la espera de sincronización, Integrations, ni el escalado
-de aplicaciones.
-
----
-
-## Hoja de ruta
-
-| Fase | Alcance | Roles nuevos |
-|---|---|---|
-| **1** | **Failover CORE** | 4 |
-| 2 | Failback CORE | 1 — `topic_reset` |
-| 3 | Rotación MM CORE | 0 |
-| 4 | Integrations | 0 — un bloque en `parejas.yml` |
-| 5 | Proxy | 0 — incluido desde la fase 1 |
-| 6 | CORE ↔ Integrations | 1 — `mm2_repoint_source` |
-
----
-
-## Identidad en los clusters
-
-`rbac/` trae un `ServiceAccount` por sitio con el privilegio mínimo que la fase 1 necesita, para
-reemplazar el uso de credenciales de administrador. Es un `Role` acotado al namespace y **sin
-`delete` en ningún recurso**: el borrado de tópicos llega en la fase 2 y llevará una identidad
-separada. Ver `rbac/README.md`.
-
-## Nota sobre `_contexto/`
-
-Contiene documentación del cliente, análisis, evidencia de discovery e imágenes. **Está en
-`.gitignore` y no se publica**: es material de trabajo con documentos confidenciales. Este
-repositorio solo lleva la automatización.
+Toda modificación es un cambio de configuración declarativo y reversible. La automatización no
+elimina ni recrea recursos.
