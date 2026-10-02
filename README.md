@@ -110,9 +110,10 @@ roles/
   kafka_decide/          valida contra el contrato; propone o verifica
   mm2_state/             modifica el estado de un MirrorMaker
   proxy_target/          conmuta el destino del tráfico
+  app_scale/             ajusta las aplicaciones al rol de su sitio
 ```
 
-De los cuatro roles, **solo dos modifican el ambiente**. Los otros dos consultan y calculan.
+De los cinco roles, **tres modifican el ambiente**. Los otros dos consultan y calculan.
 
 ---
 
@@ -168,6 +169,15 @@ Cambia el destino al que el proxy dirige a los productores y consumidores.
 Antes de tocar nada verifica que el destino sea alcanzable. Es la validación que evita el modo
 de falla más costoso: cortar el tráfico del origen y descubrir después que el destino no estaba
 disponible.
+
+### `app_scale` — ajusta las aplicaciones al rol de su sitio
+
+Lleva cada aplicación declarada al número de instancias que corresponde al rol que su sitio
+pasa a tener. Respeta el orden del plan: **primero se detienen las del sitio que deja de ser
+activo**, después se levantan las del que asume. Evita que ambas procesen a la vez.
+
+Qué aplicaciones siguen el rol del sitio es una decisión del ambiente, declarada en los datos.
+Los sistemas que conmutan por su cuenta quedan fuera.
 
 ---
 
@@ -281,6 +291,8 @@ sin esa validación.
 | Si el estado cambió tras la aprobación | se detiene |
 | Al invertir la replicación | apaga antes de activar, para no duplicar mensajes |
 | Al conmutar el tráfico | verifica el destino antes de cortar el origen |
+| Al mover las aplicaciones | detiene antes de levantar, para que no procesen en paralelo |
+| Tras el cambio | los consumidores retoman en el mensaje donde quedaron |
 | Al terminar | confirma que el estado alcanzado es el declarado |
 
 Toda modificación es un cambio de configuración declarativo y reversible. La automatización no
