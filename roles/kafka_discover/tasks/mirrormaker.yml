@@ -26,7 +26,6 @@
     _kd_cx: "{{ _kd_o.status.connectors | default([]) }}"
     _kd_dato:
       vive_en: "{{ _kd_mc.sitio }}"
-      replicas: "{{ _kd_o.spec.replicas | default(-1) | int }}"
       estado: >-
         {{ 'DESCONOCIDO' if _kd_r_mm.resources is not defined
            else ('OFF' if _kd_r_mm.resources | length == 0
@@ -34,6 +33,5 @@
       conectores_ok: >-
         {{ _kd_cx | length > 0 and (_kd_cx | selectattr('connector.state', 'eq', 'RUNNING')
            | list | length) == (_kd_cx | length) }}
-      conectores: "{{ _kd_cx | length }}"
   ansible.builtin.set_fact:
     _kd_mms: "{{ _kd_mms | combine({_kd_mm: _kd_dato}) }}"

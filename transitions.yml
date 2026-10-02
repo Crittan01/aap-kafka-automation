@@ -64,9 +64,3 @@ politica_estado_desconocido:
     El estado descubierto no corresponde a ninguna transicion permitida.
     El workflow se detiene sin interpretar ni corregir.
 
-politica_deriva:
-  accion: HARD_STOP
-  condicion: estado_declarado != estado_descubierto
-  mensaje: >-
-    El estado real no coincide con el ultimo registrado.
-    Requiere reconciliacion manual antes de operar.

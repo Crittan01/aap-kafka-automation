@@ -30,12 +30,6 @@
     _dc_faltantes: >-
       {{ _dc_antes | dict2items
          | rejectattr('key', 'in', _dc_ahora.keys() | list) | map(attribute='key') | list }}
-    _dc_menores: >-
-      {{ _dc_antes | dict2items
-         | selectattr('key', 'in', _dc_ahora.keys() | list)
-         | selectattr('value', 'gt', 0)
-         | map(attribute='key') | list
-         | select('in', _dc_ahora.keys() | list) | list }}
   ansible.builtin.assert:
     that:
       - _dc_faltantes | length == 0

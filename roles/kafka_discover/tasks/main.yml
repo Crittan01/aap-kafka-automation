@@ -55,7 +55,6 @@
   ansible.builtin.set_fact:
     kafka_estado:
       pareja: "{{ pareja }}"
-      descubierto: "{{ lookup('pipe', 'date -u +%FT%TZ') }}"
       activo: "{{ _kd_activo }}"
       pasivo: "{{ 'ca' if _kd_activo == 'co' else ('co' if _kd_activo == 'ca' else '') }}"
       sitios_caidos: "{{ _kd_caidos }}"
@@ -67,13 +66,6 @@
       sitios: "{{ _kd_sitios }}"
       mirrormakers: "{{ _kd_mms }}"
       replicacion: "{{ _kd_repl }}"
-
-# Prefijo wf_: AAP inyecta los artifacts como extra_vars, que tienen mayor
-# precedencia que set_fact. Sin prefijo pisarian el fact interno en silencio.
-- name: Publicar estado como artifact del workflow
-  ansible.builtin.set_stats:
-    data:
-      wf_kafka_estado: "{{ kafka_estado }}"
 
 - name: Mostrar estado
   ansible.builtin.debug:
