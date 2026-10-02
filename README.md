@@ -45,6 +45,26 @@ flowchart TD
     class FIN fin
 ```
 
+### Las etapas
+
+| | Etapa | Qué ocurre |
+|---|---|---|
+| 1 | **Descubrir** | Se consulta el estado real de los dos sitios: cuál está activo, en qué estado está cada MirrorMaker, hacia dónde apunta el tráfico y cuánto atraso acumula la replicación. Nada se da por supuesto. |
+| 2 | **Reconocer** | El estado encontrado debe corresponder a una situación conocida. Señales contradictorias —dos replicaciones activas a la vez, un sitio que no responde, un conector caído— interrumpen la operación. |
+| 3 | **Validar la transición** | La operación solicitada debe estar permitida desde el estado actual. El conjunto de transiciones válidas es explícito y acotado. |
+| 4 | **Validaciones previas** | Se comprueban las condiciones necesarias para que la operación pueda completarse: salud del sitio destino, estado de la replicación y alcanzabilidad del destino del tráfico. |
+| 5 | **Proponer** | Se presenta al operador qué se encontró, qué cambios se aplicarán y cómo quedará el ambiente. |
+| 6 | **Aprobar** | El flujo se detiene. Hasta aquí no se modificó nada. |
+| 7 | **Revalidar** | Antes de la primera escritura se vuelve a establecer el estado y se comprueba que siga coincidiendo con lo aprobado. |
+| 8 | **Ejecutar** | Se apaga la replicación en curso, se activa la inversa y se conmuta el destino del tráfico. En ese orden. |
+| 9 | **Verificar** | Se confirma que el estado alcanzado es el que la transición declaraba. |
+
+Las etapas 1 a 6 no modifican el ambiente. La primera escritura ocurre en la 8.
+
+---
+
+## Principios
+
 Dos propiedades sostienen el diseño:
 
 **No se asume quién es el sitio activo.** Se descubre en cada ejecución, a partir de qué
@@ -93,6 +113,61 @@ roles/
 ```
 
 De los cuatro roles, **solo dos modifican el ambiente**. Los otros dos consultan y calculan.
+
+---
+
+## Los roles
+
+Cada rol es una capacidad acotada que recibe una pareja y actúa sobre ella. Ninguno contiene
+referencias a una pareja concreta: eso vive en los datos.
+
+### `kafka_discover` — establece el estado real
+
+Consulta los dos sitios y construye una representación única del ambiente: qué sitio está
+activo, en qué estado se encuentra cada MirrorMaker, hacia dónde apunta el tráfico, si los
+destinos configurados son alcanzables, y cuánto atraso acumula la replicación medido por
+partición.
+
+El sitio activo **se deduce**, no se configura: es aquel desde el cual se está replicando.
+
+Es la única pieza que consulta ambos sitios a la vez, y la que alimenta a todas las demás. Si un
+sitio no responde, lo reporta como tal en lugar de fallar — distinguir *"no existe"* de *"no
+pude consultarlo"* es necesario para decidir correctamente.
+
+**No modifica nada.**
+
+### `kafka_decide` — contrasta contra el contrato
+
+Busca en `transitions.yml` la transición que corresponde a la operación solicitada desde el
+estado encontrado. Si no existe, interrumpe.
+
+Opera en dos momentos:
+
+| Momento | Qué hace |
+|---|---|
+| Antes de ejecutar | Corre las validaciones previas y arma el plan: qué recursos se tocarán, con qué valores y cuál es el resultado esperado |
+| Después de ejecutar | Compara el estado alcanzado contra el que la transición declaraba |
+
+**No modifica nada.** Decide si se puede avanzar y qué debe ocurrir; la ejecución es de otros.
+
+### `mm2_state` — cambia el estado de la replicación
+
+Lleva cada MirrorMaker al estado que el plan indica. El cambio es declarativo: se ajusta la
+configuración existente, no se eliminan ni recrean recursos.
+
+Respeta el orden del plan, que no es arbitrario: **primero se detiene la replicación en curso y
+después se activa la inversa.** Tenerlas activas simultáneamente haría que los mensajes
+circulen entre sitios indefinidamente.
+
+Tras cada cambio espera a que el recurso quede efectivamente aplicado antes de continuar.
+
+### `proxy_target` — conmuta el destino del tráfico
+
+Cambia el destino al que el proxy dirige a los productores y consumidores.
+
+Antes de tocar nada verifica que el destino sea alcanzable. Es la validación que evita el modo
+de falla más costoso: cortar el tráfico del origen y descubrir después que el destino no estaba
+disponible.
 
 ---
 
