@@ -1,10 +1,8 @@
 # ─────────────────────────────────────────────────────────────
-#  Contexto de trabajo — NO se publica
+#  Material de trabajo — no forma parte de la solucion
 # ─────────────────────────────────────────────────────────────
-# Documentación del cliente, análisis, evidencia de discovery e
-# imágenes extraídas. Material confidencial Red Hat / BPD y notas
-# internas: vive local, no va al repo que consume AAP.
 _contexto/
+rbac/
 
 # ─────────────────────────────────────────────────────────────
 #  Credenciales — nunca
@@ -43,14 +41,3 @@ venv/
 *.swp
 .idea/
 .vscode/
-
-# ─────────────────────────────────────────────────────────────
-#  Fuera de la fase actual (fase 1 - Failover CORE)
-# ─────────────────────────────────────────────────────────────
-# Quitar la linea correspondiente al abrir cada fase.
-roles/topic_reset/
-roles/wait_replication_drained/
-roles/mm2_repoint_source/
-playbooks/failback.yml
-playbooks/rotacion.yml
-playbooks/detect.yml
