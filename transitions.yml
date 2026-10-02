@@ -23,6 +23,7 @@ transiciones:
       - sitio_b_kafka_ready
       - sitio_b_sin_under_replicated
       - replicacion_al_dia
+      - consumidores_al_dia
       - proxy_destino_b_resuelve
       - sitio_b_alcanzable
 

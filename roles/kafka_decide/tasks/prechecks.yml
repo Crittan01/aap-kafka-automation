@@ -58,6 +58,38 @@
     success_msg: "replicacion al dia (atraso {{ _dc_atraso_max }} <= {{ umbrales.lag_maximo_mensajes }})"
   when: "'replicacion_al_dia' in _dc_t.prechecks"
 
+# Los mensajes pueden estar replicados y la posicion de los consumidores no:
+# son dos flujos distintos. Sin este control el sitio que asume reprocesa.
+- name: Precheck consumidores al dia
+  vars:
+    _dc_ga: "{{ kafka_estado.replicacion.grupos[_dc_sa] | default({}) }}"
+    _dc_gb: "{{ kafka_estado.replicacion.grupos[_dc_sb] | default({}) }}"
+    _dc_desfasados: >-
+      {{ _dc_ga | dict2items
+         | rejectattr('key', 'in', _dc_gb.keys() | list) | map(attribute='key') | list }}
+  ansible.builtin.assert:
+    that:
+      - _dc_desfasados | length == 0
+    fail_msg: >-
+      Grupos de consumo sin posicion replicada en {{ _dc_sb }}:
+      {{ _dc_desfasados | join(', ') }}
+    success_msg: "todos los grupos tienen posicion en {{ _dc_sb }}"
+  when: "'consumidores_al_dia' in _dc_t.prechecks"
+
+- name: Precheck posicion de cada grupo al dia
+  ansible.builtin.assert:
+    that:
+      - (kafka_estado.replicacion.grupos[_dc_sb][item.key] | default(-1) | int) >= (item.value | int)
+    fail_msg: >-
+      La posicion de {{ item.key }} no esta al dia en {{ _dc_sb }}:
+      {{ _dc_sa }}={{ item.value }}, {{ _dc_sb }}={{ kafka_estado.replicacion.grupos[_dc_sb][item.key] | default('ausente') }}.
+      El sitio que asume reprocesaria mensajes.
+    success_msg: "{{ item.key }}: posicion {{ item.value }} replicada"
+  loop: "{{ kafka_estado.replicacion.grupos[_dc_sa] | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: "'consumidores_al_dia' in _dc_t.prechecks"
+
 - name: Precheck destino del proxy resuelve
   ansible.builtin.assert:
     that: parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] not in kafka_estado.sitios[_dc_sa].proxy_destinos_rotos
