@@ -230,10 +230,45 @@ El plan aprobado acompaña a la ejecución. Antes de modificar nada, la automati
 establecer el estado y **comprueba que siga coincidiendo con lo aprobado**: si algo cambió entre
 la aprobación y la ejecución, se detiene.
 
-### Credenciales
+### Objetos requeridos
 
-Un tipo de credencial propio entrega a la automatización el acceso a cada sitio. Su creación
-requiere privilegios de superusuario en la plataforma.
+| Objeto | Función |
+|---|---|
+| Proyecto | Apunta a este repositorio. Conviene sincronizarlo al lanzar, para que cada ejecución use la versión vigente |
+| Inventario | Un único `localhost`. La automatización corre desde el entorno de ejecución contra las APIs de los clústeres; no hay hosts remotos |
+| Tipo de credencial | Entrega el acceso a cada sitio. **Su creación requiere privilegios de superusuario** en la plataforma; no alcanza con administrar la organización |
+| Credencial | Una por conjunto de sitios, construida sobre el tipo anterior |
+| Plantillas de trabajo | Tres: consulta de estado, validación y ejecución |
+| Flujo de trabajo | Uno por operación: validación → aprobación → ejecución |
+
+Las tres plantillas son genéricas: no contienen la operación ni la pareja. Esos valores llegan
+desde el flujo.
+
+### Configuración que la solución requiere
+
+Más allá de crear los objetos, estas condiciones sostienen las garantías de la sección final.
+Sin ellas la automatización sigue funcionando, pero deja de ser confiable.
+
+**El flujo de trabajo es la única puerta de entrada.** El formulario que responde el operador
+vive ahí, no en las plantillas. Replicarlo en ambos lugares abre la posibilidad de que queden
+desalineados y que el comportamiento dependa de por dónde se entre.
+
+**Cada valor tiene un solo origen.** Lo que el operador elige llega por el formulario; lo que
+define el contexto de ejecución vive en la plantilla correspondiente; lo que configura el
+comportamiento de la solución vive en este repositorio. Un mismo valor definido en dos lugares
+vuelve indeterminado cuál gana.
+
+**La inyección libre de variables debe estar deshabilitada** en el flujo y en todo lo que
+ejecute. De lo contrario, quien lanza puede sobrescribir los umbrales que gobiernan las
+validaciones previas y atravesarlas sin que quede constancia de que se saltearon.
+
+La consecuencia es deliberada: **los parámetros que gobiernan el comportamiento solo se cambian
+en el repositorio**, con revisión y trazabilidad. La pregunta *"¿con qué parámetros se ejecutó
+esta operación?"* tiene una única respuesta posible, y está versionada.
+
+**La ejecución declara que opera bajo aprobación.** La plantilla que modifica el ambiente lleva
+esa condición fijada: si se la invoca sin el plan aprobado, se detiene en lugar de continuar
+sin esa validación.
 
 ---
 
