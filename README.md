@@ -15,7 +15,7 @@ correcto y confirmar el resultado.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','fontSize':'14px'}}}%%
 flowchart TD
-    OP([El operador solicita la operación]) --> DESC[Descubrir el estado real<br/>de ambos sitios]
+    OP([El operador solicita la operación<br/>y declara la dirección]) --> DESC[Descubrir el estado real<br/>de ambos sitios]
     DESC --> COH{¿El estado es<br/>reconocible?}
     COH -->|no| S1([Se detiene])
     COH -->|sí| VAL{¿La transición<br/>está permitida?}
@@ -52,7 +52,7 @@ flowchart TD
 | 1 | **Descubrir** | Se consulta el estado real de los dos sitios: cuál está activo, en qué estado está cada MirrorMaker, hacia dónde apunta el tráfico y cuánto atraso acumula la replicación. Nada se da por supuesto. |
 | 2 | **Reconocer** | El estado encontrado debe corresponder a una situación conocida. Señales contradictorias —dos replicaciones activas a la vez, un sitio que no responde, un conector caído— interrumpen la operación. |
 | 3 | **Validar la transición** | La operación solicitada debe estar permitida desde el estado actual. El conjunto de transiciones válidas es explícito y acotado. |
-| 4 | **Validaciones previas** | Se comprueban las condiciones necesarias para que la operación pueda completarse: salud del sitio destino, estado de la replicación y alcanzabilidad del destino del tráfico. |
+| 4 | **Validaciones previas** | Se comprueban las condiciones necesarias para que la operación pueda completarse: que la dirección declarada por el operador sea la que el descubrimiento encontró, la salud del sitio destino, el estado de la replicación y la alcanzabilidad del destino del tráfico. |
 | 5 | **Proponer** | Se presenta al operador qué se encontró, qué cambios se aplicarán y cómo quedará el ambiente. |
 | 6 | **Aprobar** | El flujo se detiene. Hasta aquí no se modificó nada. |
 | 7 | **Revalidar** | Antes de la primera escritura se vuelve a establecer el estado y se comprueba que siga coincidiendo con lo aprobado. |
@@ -214,14 +214,21 @@ La transición declara cuáles exige. Si alguna falla, no se modifica nada.
 
 | Validación | Qué exige |
 |---|---|
+| Dirección declarada coincide | lo que pidió el operador es lo que hay |
 | Sitio destino alcanzable | su API responde |
 | Kafka destino operativo | el clúster reporta estado correcto |
 | Sin particiones sub-replicadas | el destino está íntegro |
 | Replicación al día | el atraso no supera el umbral configurado |
+| Posición de los consumidores replicada | el sitio que asume no reprocesa desde el principio |
 | Destino de tráfico resoluble | la configuración del proxy apunta a un destino válido |
 
-La última evita el modo de falla más costoso: cortar el tráfico y descubrir después que el
-destino no era alcanzable.
+Dos merecen explicación. La de **posición de los consumidores** existe porque los mensajes y la
+posición de lectura son dos flujos distintos: pueden estar los datos y no estar el marcador, y
+entonces el sitio que asume reprocesa. La de **destino de tráfico** evita el modo de falla más
+costoso: cortar el tráfico y descubrir después que el destino no era alcanzable.
+
+Las validaciones que comparan ambos sitios exigen además haber podido medirlos. Una validación
+sin datos no se da por superada.
 
 ---
 
@@ -229,9 +236,14 @@ destino no era alcanzable.
 
 El flujo se ejecuta como un workflow de tres pasos: **validación → aprobación → ejecución**.
 
-El operador declara únicamente la intención — qué pareja y qué operación. **El sitio destino y
-el escenario los determina la automatización**, y el operador los confirma al aprobar. Eso
-elimina la posibilidad de ejecutar el escenario equivocado.
+El operador declara su intención — qué pareja, qué operación y en qué dirección. **La dirección
+no manda sobre el descubrimiento: se contrasta con él.** Si el operador pide mover la operación
+de un sitio a otro y el estado encontrado es distinto, el workflow se detiene sin modificar nada
+en lugar de proponer la maniobra inversa.
+
+Eso cierra un modo de falla propio de la automatización: sin la dirección declarada, la misma
+plantilla ejecuta hacia un lado o hacia el otro según un estado que el operador no ve hasta que
+ya está propuesto, y una aprobación dada por costumbre bastaría para conmutar al revés.
 
 Antes de aprobar, el operador recibe el estado encontrado, los cambios que se aplicarán y el
 resultado esperado.
