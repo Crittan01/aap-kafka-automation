@@ -282,6 +282,28 @@ sin esa validación.
 
 ---
 
+## Nota sobre la versión de la API de MirrorMaker
+
+Los recursos `KafkaMirrorMaker2` están definidos con el formato anterior del esquema de Strimzi:
+declaran `spec.clusters`, `connectCluster` y `sourceCluster`/`targetCluster`.
+
+La automatización **apunta explícitamente a `v1beta2`** en todas sus consultas y modificaciones,
+porque es la versión que esos recursos entienden. No es una omisión: leídos por `v1` no exponen
+su topología, y escritos por `v1` son rechazados, ya que ese esquema exige un `spec.target` que
+no tienen.
+
+### Cuando se actualice el operador
+
+La versión `v1` reemplaza esos campos por `spec.target` y `spec.mirrors[].source`. Al migrar:
+
+1. Reescribir los manifiestos de `KafkaMirrorMaker2` con los campos nuevos.
+2. Cambiar `api_versions.mirrormaker2` en `umbrales.yml` a la versión nueva.
+
+El segundo paso es un único valor, y es el motivo por el que la versión está declarada en los
+datos y no repetida en cada tarea.
+
+---
+
 ## Garantías
 
 | | |
