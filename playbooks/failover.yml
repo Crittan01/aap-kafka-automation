@@ -7,7 +7,7 @@
 # Asi la diferencia de comportamiento es declarada, no inferida: si se espera
 # un plan aprobado y no llega, falla en vez de saltearse en silencio.
 #
-# ansible-playbook playbooks/failover.yml -e pareja=core
+# ansible-playbook playbooks/failover.yml -e pareja=core -e direccion=co_a_ca
 
 - name: Ejecutar failover
   hosts: localhost
@@ -15,65 +15,85 @@
 
   vars:
     exigir_plan_aprobado: false
+    # Si el plan aprobado no tiene acciones no hay nada que descubrir ni
+    # verificar. Descubrir cuesta una vuelta de consultas a los brokers, y no
+    # hacer nada siempre es seguro: no hay estado que contrastar.
+    nada_aprobado: "{{ wf_kafka_plan.nada_que_hacer | default(false) | bool }}"
 
   tasks:
-    - name: Descubrir estado actual
-      ansible.builtin.include_role:
-        name: kafka_discover
-
-    - name: Revalidar la transicion
-      ansible.builtin.include_role:
-        name: kafka_decide
-      vars:
-        modo: proponer
-
-    - name: Exigir que el plan aprobado haya llegado
-      ansible.builtin.assert:
-        that: wf_kafka_plan is defined
-        fail_msg: >-
-          Se esperaba el plan aprobado del Job Template anterior y no llego.
-          Revisar el cableado del workflow en AAP.
-        quiet: true
-      when: exigir_plan_aprobado | bool
-
-    - name: Comprobar que el plan sigue siendo el aprobado
-      ansible.builtin.assert:
-        that:
-          - wf_kafka_plan.transicion == kafka_plan.transicion
-          - wf_kafka_plan.sitio_a == kafka_plan.sitio_a
-          - wf_kafka_plan.sitio_b == kafka_plan.sitio_b
-        fail_msg: >-
-          El estado cambio desde la aprobacion.
-          Aprobado: {{ wf_kafka_plan.transicion }} {{ wf_kafka_plan.sitio_a }} -> {{ wf_kafka_plan.sitio_b }}.
-          Ahora:    {{ kafka_plan.transicion }} {{ kafka_plan.sitio_a }} -> {{ kafka_plan.sitio_b }}.
-        success_msg: "El plan coincide con el aprobado"
-      when: exigir_plan_aprobado | bool
-
-    - name: Avisar que se corre sin aprobacion previa
+    - name: Informar que el plan aprobado no tiene nada que ejecutar
       ansible.builtin.debug:
         msg: >-
-          exigir_plan_aprobado=false: no se compara contra un plan aprobado.
-          La transicion ya fue revalidada contra el estado actual.
-      when: not exigir_plan_aprobado | bool
+          El plan aprobado no tiene acciones: {{ wf_kafka_plan.sitio_a }} ya era
+          el sitio activo solicitado. No se modifica nada.
+      when: nada_aprobado | bool
 
-    - name: Invertir MirrorMaker
-      ansible.builtin.include_role:
-        name: mm2_state
+    - name: Ejecutar la transicion aprobada
+      when: not nada_aprobado | bool
+      block:
+        - name: Descubrir estado actual
+          ansible.builtin.include_role:
+            name: kafka_discover
 
-    - name: Conmutar proxy
-      ansible.builtin.include_role:
-        name: proxy_target
+        - name: Revalidar la transicion
+          ansible.builtin.include_role:
+            name: kafka_decide
+          vars:
+            modo: proponer
 
-    - name: Escalar aplicaciones
-      ansible.builtin.include_role:
-        name: app_scale
+        - name: Exigir que el plan aprobado haya llegado
+          ansible.builtin.assert:
+            that: wf_kafka_plan is defined
+            fail_msg: >-
+              Se esperaba el plan aprobado del Job Template anterior y no llego.
+              Revisar el cableado del workflow en AAP.
+            quiet: true
+          when: exigir_plan_aprobado | bool
 
-    - name: Descubrir estado final
-      ansible.builtin.include_role:
-        name: kafka_discover
+        - name: Comprobar que el plan sigue siendo el aprobado
+          ansible.builtin.assert:
+            that:
+              - wf_kafka_plan.transicion == kafka_plan.transicion
+              - wf_kafka_plan.sitio_a == kafka_plan.sitio_a
+              - wf_kafka_plan.sitio_b == kafka_plan.sitio_b
+            fail_msg: >-
+              El estado cambio desde la aprobacion.
+              Aprobado: {{ wf_kafka_plan.transicion }} {{ wf_kafka_plan.sitio_a }} -> {{ wf_kafka_plan.sitio_b }}.
+              Ahora:    {{ kafka_plan.transicion }} {{ kafka_plan.sitio_a }} -> {{ kafka_plan.sitio_b }}.
+            success_msg: "El plan coincide con el aprobado"
+          when: exigir_plan_aprobado | bool
 
-    - name: Verificar estado final
-      ansible.builtin.include_role:
-        name: kafka_decide
-      vars:
-        modo: verificar
+        - name: Avisar que se corre sin aprobacion previa
+          ansible.builtin.debug:
+            msg: >-
+              exigir_plan_aprobado=false: no se compara contra un plan aprobado.
+              La transicion ya fue revalidada contra el estado actual.
+          when: not exigir_plan_aprobado | bool
+
+        # Suelto, sin plan aprobado, el descubrimiento de esta corrida pudo
+        # concluir que ya se esta en el sitio solicitado.
+        - name: Terminar si no hay acciones que ejecutar
+          ansible.builtin.meta: end_play
+          when: kafka_plan.nada_que_hacer | bool
+
+        - name: Invertir MirrorMaker
+          ansible.builtin.include_role:
+            name: mm2_state
+
+        - name: Conmutar proxy
+          ansible.builtin.include_role:
+            name: proxy_target
+
+        - name: Escalar aplicaciones
+          ansible.builtin.include_role:
+            name: app_scale
+
+        - name: Descubrir estado final
+          ansible.builtin.include_role:
+            name: kafka_discover
+
+        - name: Verificar estado final
+          ansible.builtin.include_role:
+            name: kafka_decide
+          vars:
+            modo: verificar

@@ -152,15 +152,4 @@
 
 - name: Verificar el estado final
   ansible.builtin.include_tasks: verificar.yml
-  when:
-    - modo == 'verificar'
-    - not (kafka_plan.nada_que_hacer | default(false) | bool)
-
-- name: Informar que no hubo cambios que verificar
-  ansible.builtin.debug:
-    msg: >-
-      Sin cambios: {{ kafka_estado.activo }} ya era el sitio activo solicitado.
-      No se modifico nada, no hay estado final que contrastar.
-  when:
-    - modo == 'verificar'
-    - kafka_plan.nada_que_hacer | default(false) | bool
+  when: modo == 'verificar'
