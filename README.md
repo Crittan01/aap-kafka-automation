@@ -188,10 +188,15 @@ recursos ni rutas.
 
 ### `parejas.yml` — qué existe y dónde
 
-Por cada pareja: los dos sitios con su API y namespace, los dos MirrorMaker con el sitio donde
-reside cada uno, el proxy y sus destinos posibles, y la lista de tópicos de aplicación.
+Por cada pareja: los dos sitios con su API, namespace y nombre de clúster; los dos MirrorMaker
+con el sitio donde reside cada uno; el proxy y sus destinos posibles; los tópicos de aplicación
+y los grupos de consumo que se vigilan; y las aplicaciones que siguen el rol de su sitio.
 
 El MirrorMaker reside siempre en el sitio **destino** de la replicación, no en el origen.
+
+No se declaran nombres de pods. El broker al que se consultan los offsets se elige por etiqueta
+entre los que están corriendo: un nombre fijo se desactualiza en silencio cuando el clúster se
+recrea, y la medición quedaría vacía sin que nada lo señale.
 
 ### `transitions.yml` — qué está permitido
 
@@ -327,6 +332,7 @@ datos y no repetida en cada tarea.
 | | |
 |---|---|
 | Ante un estado desconocido | se detiene sin modificar nada |
+| Si ya se está en el destino solicitado | lo informa y no modifica nada |
 | Ante una validación fallida | se detiene antes de la primera escritura |
 | Si el estado cambió tras la aprobación | se detiene |
 | Al invertir la replicación | apaga antes de activar, para no duplicar mensajes |
