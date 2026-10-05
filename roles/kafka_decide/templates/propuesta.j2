@@ -1,7 +1,20 @@
+{% if kafka_plan.nada_que_hacer | bool %}
+═══ NADA QUE HACER ═══
+
+Se solicito dejar activo a {{ kafka_plan.direccion | split('_a_') | last }},
+y {{ kafka_estado.activo }} ya es el sitio activo. El estado es coherente.
+
+No se va a modificar nada.
+
+ESTADO ENCONTRADO
+  activo: {{ kafka_estado.activo }}    pasivo: {{ kafka_estado.pasivo }}
+  {{ kafka_plan.mm_hacia_b }}: {{ kafka_estado.mirrormakers[kafka_plan.mm_hacia_b].estado }}    {{ kafka_plan.mm_hacia_a }}: {{ kafka_estado.mirrormakers[kafka_plan.mm_hacia_a].estado }}
+  proxy {{ kafka_plan.sitio_a }} -> {{ kafka_estado.sitios[kafka_plan.sitio_a].proxy_destino }}
+{% else %}
 ═══ PROPUESTA · {{ kafka_plan.transicion }} ═══
 
 DIRECCION DECLARADA POR EL OPERADOR
-  {{ kafka_plan.sitio_a }} -> {{ kafka_plan.sitio_b }}  (coincide con lo descubierto)
+  dejar activo a {{ kafka_plan.direccion | split('_a_') | last }}  (hoy lo es {{ kafka_estado.activo }})
 
 ESTADO ENCONTRADO
   activo: {{ kafka_estado.activo }}    pasivo: {{ kafka_estado.pasivo }}
@@ -29,3 +42,4 @@ VA A QUEDAR
   activo: {{ kafka_plan.sitio_b }}    pasivo: {{ kafka_plan.sitio_a }}
 
 PRECHECKS  todos superados
+{% endif %}

@@ -31,6 +31,55 @@
     _dc_mm_hacia_a: "{{ kafka_estado.pasivo }}_{{ kafka_estado.activo }}"
   when: modo == 'proponer'
 
+# La direccion declara el destino, no la maniobra. Se valida antes de
+# interpretarla: sin esto una direccion ausente se leeria como "hay que
+# ejecutar" y el operador nunca declaro nada.
+- name: Validar la direccion declarada
+  vars:
+    _dc_origen: "{{ direccion | default('') | split('_a_') | first }}"
+    _dc_destino: "{{ direccion | default('') | split('_a_') | last }}"
+  ansible.builtin.assert:
+    that:
+      - direccion | default('') | length > 0
+      - _dc_origen in parejas[pareja].sitios
+      - _dc_destino in parejas[pareja].sitios
+      - _dc_origen != _dc_destino
+    fail_msg: >-
+      Direccion '{{ direccion | default('(ninguna)') }}' no valida para la pareja
+      {{ pareja }}. Se espera origen_a_destino con los sitios
+      {{ parejas[pareja].sitios.keys() | list | join(', ') }}.
+    quiet: true
+  when: modo == 'proponer'
+
+# Si el destino pedido ya es el sitio activo, el operador ya esta donde pidio
+# estar: la operacion no tiene nada que hacer. No es un error del operador.
+- name: Determinar si ya se esta en la direccion solicitada
+  ansible.builtin.set_fact:
+    _dc_nada_que_hacer: >-
+      {{ (direccion | split('_a_') | last) == kafka_estado.activo }}
+  when: modo == 'proponer'
+
+# Estar en el destino no alcanza para declarar la operacion completada: el
+# sitio correcto puede estar activo con la replicacion o el trafico a medio
+# camino. Un estado incoherente necesita una persona, no un no-op.
+- name: Detener si ya se esta en el destino pero el estado no es coherente
+  vars:
+    _dc_activas: >-
+      {{ kafka_estado.mirrormakers | dict2items
+         | selectattr('value.estado', 'eq', 'ACTIVO') | map(attribute='key') | list }}
+  ansible.builtin.fail:
+    msg: |
+      El destino solicitado ({{ kafka_estado.activo }}) ya es el sitio activo,
+      pero el estado no es coherente: no se puede declarar la operacion
+      completada ni ejecutar nada. Revisar antes de reintentar.
+      sitios caidos: {{ kafka_estado.sitios_caidos | join(', ') | default('ninguno', true) }}
+      destinos de proxy que no resuelven: {{ kafka_estado.proxy_destinos_rotos | join(', ') | default('ninguno', true) }}
+      replicaciones activas: {{ _dc_activas | join(', ') | default('ninguna', true) }}
+  when:
+    - modo == 'proponer'
+    - _dc_nada_que_hacer | bool
+    - not (kafka_estado.coherente | bool)
+
 # En verificar los sitios salen del plan, no del estado nuevo: despues del
 # failover el activo cambio y re-derivarlos invertiria la expectativa.
 - name: Recuperar sitios del plan aprobado
@@ -58,27 +107,29 @@
          encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_a].estado }}
   when:
     - modo == 'proponer'
+    - not _dc_nada_que_hacer | bool
     - kafka_estado.mirrormakers[_dc_mm_hacia_b].estado != _dc_t.desde.mirrormakers.hacia_b
       or kafka_estado.mirrormakers[_dc_mm_hacia_a].estado != _dc_t.desde.mirrormakers.hacia_a
 
 - name: Ejecutar prechecks
   ansible.builtin.include_tasks: prechecks.yml
-  when: modo == 'proponer'
+  when:
+    - modo == 'proponer'
+    - not _dc_nada_que_hacer | bool
 
 - name: Armar el plan
-  vars:
-    _dc_acciones: >-
-      {{ _dc_t.acciones | map('combine', {}) | list }}
   ansible.builtin.set_fact:
     kafka_plan:
-      transicion: "{{ _dc_t.id }}"
+      transicion: "{{ 'SIN_CAMBIOS' if _dc_nada_que_hacer | bool else _dc_t.id }}"
+      nada_que_hacer: "{{ _dc_nada_que_hacer }}"
+      direccion: "{{ direccion }}"
       operacion: "{{ operacion }}"
       pareja: "{{ pareja }}"
       sitio_a: "{{ _dc_sa }}"
       sitio_b: "{{ _dc_sb }}"
       mm_hacia_b: "{{ _dc_mm_hacia_b }}"
       mm_hacia_a: "{{ _dc_mm_hacia_a }}"
-      acciones: "{{ _dc_t.acciones }}"
+      acciones: "{{ [] if _dc_nada_que_hacer | bool else _dc_t.acciones }}"
       # Fotografia de los datos al decidir, para contrastar al terminar.
       datos_previos:
         offsets: "{{ kafka_estado.replicacion.offsets[_dc_sa] | default({}) }}"
@@ -101,4 +152,15 @@
 
 - name: Verificar el estado final
   ansible.builtin.include_tasks: verificar.yml
-  when: modo == 'verificar'
+  when:
+    - modo == 'verificar'
+    - not (kafka_plan.nada_que_hacer | default(false) | bool)
+
+- name: Informar que no hubo cambios que verificar
+  ansible.builtin.debug:
+    msg: >-
+      Sin cambios: {{ kafka_estado.activo }} ya era el sitio activo solicitado.
+      No se modifico nada, no hay estado final que contrastar.
+  when:
+    - modo == 'verificar'
+    - kafka_plan.nada_que_hacer | default(false) | bool

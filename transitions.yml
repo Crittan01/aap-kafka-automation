@@ -20,7 +20,6 @@ transiciones:
       proxy_destino: sitio_a
 
     prechecks:
-      - direccion_declarada_coincide
       - sitio_b_kafka_ready
       - sitio_b_sin_under_replicated
       - replicacion_al_dia
