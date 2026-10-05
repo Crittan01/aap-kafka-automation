@@ -1,0 +1,29 @@
+---
+argument_specs:
+  main:
+    short_description: Decide si la operacion es posible y resuelve el plan
+    description:
+      - No escribe en los clusters.
+      - En modo proponer valida y produce kafka_plan; en verificar contrasta el estado final.
+    options:
+      pareja:
+        type: str
+        required: true
+        description: Clave de la pareja en parejas.yml
+      operacion:
+        type: str
+        required: true
+        description: Operacion a resolver contra el contrato de transiciones
+      modo:
+        type: str
+        default: proponer
+        choices: [proponer, verificar]
+        description: proponer valida y arma el plan, verificar contrasta el estado alcanzado
+      direccion:
+        type: str
+        description: >-
+          Sitio que el operador quiere dejar activo, como origen_a_destino.
+          Exigida en modo proponer; se valida contra el estado descubierto.
+      transiciones_file:
+        type: str
+        description: Ruta del contrato de transiciones

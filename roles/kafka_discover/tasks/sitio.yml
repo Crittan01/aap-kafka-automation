@@ -50,9 +50,35 @@
   failed_when: false
   changed_when: false
 
+- name: Buscar un broker al que consultar en {{ _kd_s }}
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ _kd_cfg.namespace }}"
+    label_selectors:
+      - strimzi.io/cluster={{ _kd_cfg.kafka }}
+      - strimzi.io/broker-role=true
+    field_selectors:
+      - status.phase=Running
+    host: "{{ _kd_cfg.api }}"
+    api_key: "{{ kafka_tokens[_kd_s] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _kd_r_brokers
+  failed_when: false
+  changed_when: false
+
+# El broker no se declara en los datos: se descubre por etiqueta. Un nombre
+# fijo se desactualiza en silencio cuando el cluster se recrea. Si el elegido
+# no puede responder, la medicion queda sin tomar y los prechecks se detienen,
+# que es el lado seguro.
+- name: Elegir el broker a consultar en {{ _kd_s }}
+  ansible.builtin.set_fact:
+    _kd_broker: >-
+      {{ (_kd_r_brokers.resources | default([]) | map(attribute='metadata.name')
+          | sort | first) | default('', true) }}
+
 - name: Medir offsets y replicacion en {{ _kd_s }}
   ansible.builtin.include_tasks: lag.yml
-  when: medir_lag | bool
+  when: _kd_broker | length > 0
 
 - name: Detectar KafkaService sin resolver en {{ _kd_s }}
   vars:

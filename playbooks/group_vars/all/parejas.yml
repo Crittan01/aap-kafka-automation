@@ -12,12 +12,10 @@ parejas:
         api: https://api.cluster-bvgj9.dyn.redhatworkshops.io:6443
         namespace: core-co
         kafka: bpd-kafka
-        broker_pod: bpd-kafka-kafka-3
       ca:
         api: https://api.cluster-75wqq.dyn.redhatworkshops.io:6443
         namespace: core-ca
         kafka: bpd-kafka
-        broker_pod: bpd-kafka-kafka-3
 
     # El MirrorMaker vive en el sitio destino de la replicacion.
     mirrormakers:

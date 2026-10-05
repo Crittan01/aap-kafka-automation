@@ -1,0 +1,20 @@
+---
+argument_specs:
+  main:
+    short_description: Descubre el estado real de una pareja
+    description:
+      - Solo lectura. Consulta ambos sitios, sus MirrorMaker y su proxy.
+      - Produce kafka_estado. Un sitio caido se reporta, no es un error.
+    options:
+      pareja:
+        type: str
+        required: true
+        description: Clave de la pareja en parejas.yml
+      kafka_tokens:
+        type: dict
+        required: true
+        description: Token de API por sitio, con la clave del sitio
+      kafka_validate_certs:
+        type: bool
+        default: false
+        description: Validar el certificado de la API de OpenShift
