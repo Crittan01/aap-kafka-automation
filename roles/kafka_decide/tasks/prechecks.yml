@@ -2,6 +2,26 @@
 # Cada precheck corre solo si la transicion lo nombra. La seleccion vive en
 # transitions.yml; la implementacion, aca.
 
+# El operador declara la direccion y aca se compara contra lo descubierto. No
+# manda: si no coinciden se detiene. Sin esto la misma plantilla ejecuta en la
+# direccion opuesta cuando el estado no es el que el operador cree.
+- name: Precheck direccion declarada coincide con lo descubierto
+  vars:
+    _dc_origen: "{{ direccion | default('') | split('_a_') | first }}"
+    _dc_destino: "{{ direccion | default('') | split('_a_') | last }}"
+  ansible.builtin.assert:
+    that:
+      - direccion | default('') | length > 0
+      - _dc_origen == _dc_sa
+      - _dc_destino == _dc_sb
+    fail_msg: >-
+      Direccion declarada '{{ direccion | default('(ninguno)') }}' contra lo
+      descubierto '{{ _dc_sa }}_a_{{ _dc_sb }}': el activo hoy es {{ _dc_sa }}.
+      Revisa el estado antes de reintentar; no se ejecuta en la direccion
+      contraria a la declarada.
+    success_msg: "direccion {{ _dc_sa }} -> {{ _dc_sb }} coincide con lo declarado"
+  when: "'direccion_declarada_coincide' in _dc_t.prechecks"
+
 - name: Precheck sitio destino alcanzable
   ansible.builtin.assert:
     that: kafka_estado.sitios[_dc_sb].alcanzable | bool
