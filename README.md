@@ -84,11 +84,22 @@ dos MirrorMaker y su proxy.
 
 | | |
 |---|---|
-| **Implementado** | Failover de una pareja |
-| **Previsto** | Failback, rotación programada de roles, y parejas adicionales |
+| **Implementado** | Failover de una pareja, **con ambos sitios alcanzables** |
+| **Previsto** | Failover con el sitio activo caído, failback, rotación programada de roles, y parejas adicionales |
 
 Incorporar una pareja adicional es agregar un bloque de datos: la automatización no contiene
 referencias a ninguna pareja en particular.
+
+### Por qué el sitio caído es otra operación
+
+El failover implementado conmuta la operación entre dos sitios que responden. Tres de sus cinco
+acciones escriben **en el sitio que deja de ser activo**: invertir su MirrorMaker, conmutar su
+proxy y detener sus aplicaciones.
+
+Un sitio realmente caído no es, entonces, el mismo escenario con una validación relajada: es una
+transición distinta, con menos acciones y otras condiciones de entrada. La automatización no la
+improvisa — ante un sitio que no responde, el estado encontrado no corresponde a ninguna
+transición declarada y se detiene sin modificar nada.
 
 ---
 
