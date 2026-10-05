@@ -214,7 +214,6 @@ La transición declara cuáles exige. Si alguna falla, no se modifica nada.
 
 | Validación | Qué exige |
 |---|---|
-| Dirección declarada coincide | lo que pidió el operador es lo que hay |
 | Sitio destino alcanzable | su API responde |
 | Kafka destino operativo | el clúster reporta estado correcto |
 | Sin particiones sub-replicadas | el destino está íntegro |
@@ -236,14 +235,21 @@ sin datos no se da por superada.
 
 El flujo se ejecuta como un workflow de tres pasos: **validación → aprobación → ejecución**.
 
-El operador declara su intención — qué pareja, qué operación y en qué dirección. **La dirección
-no manda sobre el descubrimiento: se contrasta con él.** Si el operador pide mover la operación
-de un sitio a otro y el estado encontrado es distinto, el workflow se detiene sin modificar nada
-en lugar de proponer la maniobra inversa.
+El operador declara su intención — qué pareja, qué operación y **qué sitio quiere dejar activo**.
+La dirección no describe una maniobra, describe el estado deseado. De ahí salen tres respuestas
+posibles:
 
-Eso cierra un modo de falla propio de la automatización: sin la dirección declarada, la misma
-plantilla ejecuta hacia un lado o hacia el otro según un estado que el operador no ve hasta que
-ya está propuesto, y una aprobación dada por costumbre bastaría para conmutar al revés.
+| Lo que el operador pide | Lo que encuentra la automatización | Respuesta |
+|---|---|---|
+| Dejar activo al otro sitio | el estado de partida de una transición válida | propone la maniobra y pide aprobación |
+| Dejar activo al sitio que ya lo es | un estado coherente | **nada que hacer**: lo informa y no modifica nada |
+| Dejar activo al sitio que ya lo es | un estado incoherente | se detiene: el sitio correcto puede estar activo con la replicación o el tráfico a medio camino, y eso necesita una persona |
+
+Que pedir un destino al que ya se llegó no sea un error hace la operación repetible: relanzarla
+tras una ejecución completa informa que no hay nada que hacer, en lugar de proponer la maniobra
+inversa. Sin la dirección declarada, la misma plantilla ejecutaba hacia un lado o hacia el otro
+según un estado que el operador no veía hasta tenerlo ya propuesto, y una aprobación dada por
+costumbre bastaba para conmutar al revés.
 
 Antes de aprobar, el operador recibe el estado encontrado, los cambios que se aplicarán y el
 resultado esperado.
