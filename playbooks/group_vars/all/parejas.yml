@@ -9,18 +9,14 @@ parejas:
 
     sitios:
       co:
-        credencial: ocp-co
         api: https://api.cluster-bvgj9.dyn.redhatworkshops.io:6443
         namespace: core-co
         kafka: bpd-kafka
-        bootstrap: bpd-kafka-kafka-bootstrap.core-co.svc:9092
         broker_pod: bpd-kafka-kafka-3
       ca:
-        credencial: ocp-ca
         api: https://api.cluster-75wqq.dyn.redhatworkshops.io:6443
         namespace: core-ca
         kafka: bpd-kafka
-        bootstrap: bpd-kafka-kafka-bootstrap.core-ca.svc:9092
         broker_pod: bpd-kafka-kafka-3
 
     # El MirrorMaker vive en el sitio destino de la replicacion.
