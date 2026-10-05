@@ -69,10 +69,11 @@
          | rejectattr('key', 'in', _dc_gb.keys() | list) | map(attribute='key') | list }}
   ansible.builtin.assert:
     that:
+      - kafka_estado.replicacion.medida | bool
       - _dc_desfasados | length == 0
     fail_msg: >-
-      Grupos de consumo sin posicion replicada en {{ _dc_sb }}:
-      {{ _dc_desfasados | join(', ') }}
+      Sin marcadores medidos en {{ _dc_sa }}, o grupos de consumo sin posicion
+      replicada en {{ _dc_sb }}: {{ _dc_desfasados | join(', ') }}
     success_msg: "todos los grupos tienen posicion en {{ _dc_sb }}"
   when: "'consumidores_al_dia' in _dc_t.prechecks"
 
