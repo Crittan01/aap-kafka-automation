@@ -19,6 +19,13 @@
     # verificar. Descubrir cuesta una vuelta de consultas a los brokers, y no
     # hacer nada siempre es seguro: no hay estado que contrastar.
     nada_aprobado: "{{ wf_kafka_plan.nada_que_hacer | default(false) | bool }}"
+    # El destino que el operador aprobo, y si ya se alcanzo. Se exige que la
+    # direccion sea la misma que viajo con el plan: si difiere, el cableado del
+    # workflow esta mal y eso si es un error.
+    _fo_destino: "{{ kafka_plan.direccion | default('') | split('_a_') | last }}"
+    _fo_destino_alcanzado: >-
+      {{ (kafka_plan.nada_que_hacer | default(false) | bool)
+         and wf_kafka_plan.direccion | default('') == kafka_plan.direccion | default('') }}
 
   tasks:
     - name: Informar que el plan aprobado no tiene nada que ejecutar
@@ -50,6 +57,28 @@
             quiet: true
           when: exigir_plan_aprobado | bool
 
+        # El plan recalculado puede diferir del aprobado por dos razones muy
+        # distintas, y solo una es un error. Si el destino que el operador pidio
+        # ya es el sitio activo, su objetivo esta cumplido: no hay nada que
+        # ejecutar y no hay nada que corregir. Cualquier otra divergencia si es
+        # un error, porque significa que el ambiente quedo en un estado que
+        # nadie aprobo.
+        #
+        # La rama benigna no puede alcanzarse con un estado a medio camino:
+        # kafka_decide ya detuvo antes si el destino coincide pero el estado no
+        # es coherente.
+        - name: Informar que el destino aprobado ya estaba alcanzado
+          ansible.builtin.debug:
+            msg: >-
+              Se aprobo dejar activo a {{ _fo_destino }}, y {{ kafka_estado.activo }}
+              ya es el sitio activo con el estado coherente. No se modifico nada.
+              El cambio ocurrio entre la aprobacion y esta ejecucion: si otra
+              corrida ya hizo la operacion no queda nada pendiente, y si no,
+              conviene revisar por que cambio.
+          when:
+            - exigir_plan_aprobado | bool
+            - _fo_destino_alcanzado | bool
+
         - name: Comprobar que el plan sigue siendo el aprobado
           ansible.builtin.assert:
             that:
@@ -57,11 +86,15 @@
               - wf_kafka_plan.sitio_a == kafka_plan.sitio_a
               - wf_kafka_plan.sitio_b == kafka_plan.sitio_b
             fail_msg: >-
-              El estado cambio desde la aprobacion.
+              El estado cambio desde la aprobacion y el ambiente quedo en una
+              situacion que nadie aprobo. No se modifico nada.
               Aprobado: {{ wf_kafka_plan.transicion }} {{ wf_kafka_plan.sitio_a }} -> {{ wf_kafka_plan.sitio_b }}.
-              Ahora:    {{ kafka_plan.transicion }} {{ kafka_plan.sitio_a }} -> {{ kafka_plan.sitio_b }}.
+              Encontrado: {{ kafka_plan.transicion }} {{ kafka_plan.sitio_a }} -> {{ kafka_plan.sitio_b }}.
+              Revisar el estado antes de reintentar.
             success_msg: "El plan coincide con el aprobado"
-          when: exigir_plan_aprobado | bool
+          when:
+            - exigir_plan_aprobado | bool
+            - not _fo_destino_alcanzado | bool
 
         - name: Avisar que se corre sin aprobacion previa
           ansible.builtin.debug:

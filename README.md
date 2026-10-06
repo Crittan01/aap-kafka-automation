@@ -271,8 +271,13 @@ Antes de aprobar, el operador recibe el estado encontrado, los cambios que se ap
 resultado esperado.
 
 El plan aprobado acompaña a la ejecución. Antes de modificar nada, la automatización vuelve a
-establecer el estado y **comprueba que siga coincidiendo con lo aprobado**: si algo cambió entre
-la aprobación y la ejecución, se detiene.
+establecer el estado y **comprueba que siga coincidiendo con lo aprobado**. Nunca ejecuta el plan
+aprobado sobre un estado distinto del que el operador vio, y distingue dos casos:
+
+- Si el sitio que se pidió dejar activo **ya lo es**, el objetivo está cumplido. Lo informa, no
+  modifica nada y **termina correctamente**: llegar al estado deseado no es un error.
+- Si el ambiente quedó en cualquier **otra** situación, se detiene con error, porque está en un
+  estado que nadie aprobó.
 
 ### Objetos requeridos
 
@@ -343,9 +348,9 @@ datos y no repetida en cada tarea.
 | | |
 |---|---|
 | Ante un estado desconocido | se detiene sin modificar nada |
-| Si ya se está en el destino solicitado | lo informa y no modifica nada |
+| Si ya se está en el destino solicitado | lo informa, no modifica nada y termina correctamente |
 | Ante una validación fallida | se detiene antes de la primera escritura |
-| Si el estado cambió tras la aprobación | se detiene |
+| Si el estado cambió tras la aprobación | nunca ejecuta lo aprobado sobre un estado distinto |
 | Al invertir la replicación | apaga antes de activar, para no duplicar mensajes |
 | Al conmutar el tráfico | verifica el destino antes de cortar el origen |
 | Al mover las aplicaciones | detiene antes de levantar, para que no procesen en paralelo |
