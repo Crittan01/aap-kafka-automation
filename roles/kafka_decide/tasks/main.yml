@@ -23,6 +23,26 @@
       operacion={{ operacion }} pareja={{ pareja }} activo={{ kafka_estado.activo | default('?') }}
   when: _dc_t | length == 0
 
+# El sitio activo se deduce del MirrorMaker encendido. Si ese MirrorMaker vive
+# en un sitio que no responde queda DESCONOCIDO y no hay activo deducible: de
+# ahi en adelante todo se derivaria de un valor vacio. Se detiene con el
+# mensaje del contrato, no con un error de variable indefinida.
+- name: Detener si no se pudo establecer el sitio activo
+  vars:
+    _dc_mms: >-
+      {{ kafka_estado.mirrormakers | dict2items
+         | map(attribute='key') | zip(kafka_estado.mirrormakers | dict2items
+         | map(attribute='value.estado')) | map('join', '=') | list }}
+  ansible.builtin.fail:
+    msg: |
+      {{ _dc_contrato.politica_estado_desconocido.mensaje }}
+      No se pudo establecer cual es el sitio activo de la pareja {{ pareja }}.
+      sitios que no responden: {{ kafka_estado.sitios_caidos | join(', ') | default('ninguno', true) }}
+      replicaciones: {{ _dc_mms | join('  ') }}
+  when:
+    - modo == 'proponer'
+    - kafka_estado.activo | length == 0
+
 - name: Resolver sitios y MirrorMakers desde el estado actual
   ansible.builtin.set_fact:
     _dc_sa: "{{ kafka_estado.activo }}"

@@ -2,10 +2,14 @@
 # Consulta un MirrorMaker en el sitio donde vive.
 # api_version anclada: por v1 la topologia no aparece y el resultado sale vacio.
 
+# El registro se limpia en cada vuelta: si el sitio donde vive este
+# MirrorMaker no responde, su consulta se salta y el valor del anterior
+# seguiria presente.
 - name: Fijar contexto del MirrorMaker
   ansible.builtin.set_fact:
     _kd_mm: "{{ _kd_item.key }}"
     _kd_mc: "{{ _kd_item.value }}"
+    _kd_r_mm: {}
 
 - name: Consultar KafkaMirrorMaker2 {{ _kd_mm }}
   kubernetes.core.k8s_info:
@@ -19,6 +23,7 @@
   register: _kd_r_mm
   failed_when: false
   changed_when: false
+  when: _kd_sitios[_kd_mc.sitio].alcanzable | bool
 
 - name: Consolidar estado del MirrorMaker {{ _kd_mm }}
   vars:

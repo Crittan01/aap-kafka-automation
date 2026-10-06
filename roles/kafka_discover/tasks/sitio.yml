@@ -1,12 +1,45 @@
 ---
 # Kafka y proxy de un sitio. Un sitio caido no es un error: se reporta.
 
+# Los registros se limpian en cada vuelta: si un sitio no responde y sus
+# consultas se saltan, los valores del sitio anterior seguirian presentes y se
+# le atribuirian a este.
 - name: Fijar contexto del sitio
   ansible.builtin.set_fact:
     _kd_s: "{{ _kd_item.key }}"
     _kd_cfg: "{{ _kd_item.value }}"
     _kd_px: "{{ _kd_p.proxy[_kd_item.key] }}"
     _kd_ksvc_rotos: []
+    _kd_r_kafka: {}
+    _kd_r_vkc: {}
+    _kd_r_ksvc: {results: []}
+    _kd_r_brokers: {}
+
+# Una API que no responde no rechaza la conexion: deja la consulta colgada
+# minutos. Con varias consultas por sitio, el descubrimiento nunca termina y
+# nadie se entera de que el sitio esta caido. Esta sonda da el veredicto en
+# segundos, para que un sitio caido se pueda reportar, que es lo prometido.
+- name: Probar si responde la API de {{ _kd_s }}
+  ansible.builtin.uri:
+    url: "{{ _kd_cfg.api }}/version"
+    validate_certs: "{{ kafka_validate_certs }}"
+    timeout: "{{ umbrales.sitio_timeout }}"
+    status_code: [200, 401, 403]
+  register: _kd_r_ping
+  failed_when: false
+  changed_when: false
+
+- name: Fijar la alcanzabilidad del sitio {{ _kd_s }}
+  ansible.builtin.set_fact:
+    _kd_vivo: "{{ _kd_r_ping.status | default(-1) | int > 0 }}"
+
+- name: Avisar que no responde el sitio {{ _kd_s }}
+  ansible.builtin.debug:
+    msg: >-
+      La API de {{ _kd_s }} no respondio en {{ umbrales.sitio_timeout }}s
+      ({{ _kd_cfg.api }}). El sitio se reporta como no alcanzable y no se le
+      hacen mas consultas.
+  when: not _kd_vivo | bool
 
 - name: Consultar cluster Kafka del sitio {{ _kd_s }}
   kubernetes.core.k8s_info:
@@ -20,6 +53,7 @@
   register: _kd_r_kafka
   failed_when: false
   changed_when: false
+  when: _kd_vivo | bool
 
 - name: Consultar VirtualKafkaCluster del sitio {{ _kd_s }}
   kubernetes.core.k8s_info:
@@ -33,6 +67,7 @@
   register: _kd_r_vkc
   failed_when: false
   changed_when: false
+  when: _kd_vivo | bool
 
 - name: Consultar KafkaService del sitio {{ _kd_s }}
   kubernetes.core.k8s_info:
@@ -49,6 +84,7 @@
   register: _kd_r_ksvc
   failed_when: false
   changed_when: false
+  when: _kd_vivo | bool
 
 - name: Buscar un broker al que consultar en {{ _kd_s }}
   kubernetes.core.k8s_info:
@@ -65,6 +101,7 @@
   register: _kd_r_brokers
   failed_when: false
   changed_when: false
+  when: _kd_vivo | bool
 
 # El broker no se declara en los datos: se descubre por etiqueta. Un nombre
 # fijo se desactualiza en silencio cuando el cluster se recrea. Si el elegido
@@ -98,7 +135,7 @@
     _kd_v: "{{ _kd_r_vkc.resources | default([]) | first | default({}, true) }}"
     _kd_destino: "{{ _kd_v.spec.targetKafkaServiceRef.name | default('') }}"
     _kd_dato:
-      alcanzable: "{{ _kd_r_kafka.resources is defined }}"
+      alcanzable: "{{ _kd_vivo | bool and _kd_r_kafka.resources is defined }}"
       kafka_version: "{{ _kd_k.status.kafkaVersion | default('') }}"
       kafka_ready: >-
         {{ (_kd_k.status.conditions | default([]) | selectattr('type', 'eq', 'Ready')
