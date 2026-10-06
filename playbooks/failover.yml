@@ -57,6 +57,23 @@
             quiet: true
           when: exigir_plan_aprobado | bool
 
+        # La aprobacion autoriza un plan que produjo una version concreta del
+        # codigo. El proyecto sincroniza antes de cada plantilla, asi que un
+        # push entre la aprobacion y esta ejecucion haria que se ejecute con
+        # codigo que nadie reviso. Eso invalida la autorizacion aunque el
+        # estado no haya cambiado, asi que se comprueba antes de las ramas.
+        - name: Comprobar que el codigo es el que produjo el plan aprobado
+          ansible.builtin.assert:
+            that: wf_kafka_plan.revision | default('') == kafka_plan.revision | default('')
+            fail_msg: >-
+              El codigo cambio entre la aprobacion y la ejecucion. No se
+              modifico nada.
+              Aprobado con la revision {{ wf_kafka_plan.revision | default('(ninguna)') }},
+              esta corrida usa {{ kafka_plan.revision | default('(ninguna)') }}.
+              Relanzar para que el operador apruebe sobre la version vigente.
+            success_msg: "El codigo coincide con el que produjo el plan aprobado"
+          when: exigir_plan_aprobado | bool
+
         # El plan recalculado puede diferir del aprobado por dos razones muy
         # distintas, y solo una es un error. Si el destino que el operador pidio
         # ya es el sitio activo, su objetivo esta cumplido: no hay nada que

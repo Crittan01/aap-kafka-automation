@@ -279,6 +279,11 @@ aprobado sobre un estado distinto del que el operador vio, y distingue dos casos
 - Si el ambiente quedó en cualquier **otra** situación, se detiene con error, porque está en un
   estado que nadie aprobó.
 
+El plan también lleva la **versión del código** que lo produjo. El proyecto se sincroniza antes de
+cada plantilla, así que un cambio publicado mientras el operador decide haría que se ejecute con
+código que nadie revisó. Si la versión no coincide, la ejecución se detiene: la aprobación
+autoriza un plan, y ese plan lo produjo una versión concreta.
+
 ### Objetos requeridos
 
 | Objeto | Función |
@@ -350,7 +355,7 @@ datos y no repetida en cada tarea.
 | Ante un estado desconocido | se detiene sin modificar nada |
 | Si ya se está en el destino solicitado | lo informa, no modifica nada y termina correctamente |
 | Ante una validación fallida | se detiene antes de la primera escritura |
-| Si el estado cambió tras la aprobación | nunca ejecuta lo aprobado sobre un estado distinto |
+| Si el estado o el código cambiaron tras la aprobación | nunca ejecuta lo aprobado sobre algo distinto de lo que el operador vio |
 | Al invertir la replicación | apaga antes de activar, para no duplicar mensajes |
 | Al conmutar el tráfico | verifica el destino antes de cortar el origen |
 | Al mover las aplicaciones | detiene antes de levantar, para que no procesen en paralelo |

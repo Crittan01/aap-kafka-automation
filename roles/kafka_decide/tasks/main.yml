@@ -143,6 +143,9 @@
       transicion: "{{ 'SIN_CAMBIOS' if _dc_nada_que_hacer | bool else _dc_t.id }}"
       nada_que_hacer: "{{ _dc_nada_que_hacer }}"
       direccion: "{{ direccion }}"
+      # Revision del codigo que calculo este plan. AWX la inyecta en el
+      # entorno del job; suelto queda vacia y la comparacion no aplica.
+      revision: "{{ lookup('ansible.builtin.env', 'PROJECT_REVISION') }}"
       operacion: "{{ operacion }}"
       pareja: "{{ pareja }}"
       sitio_a: "{{ _dc_sa }}"
