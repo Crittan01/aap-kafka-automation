@@ -16,7 +16,7 @@ La unidad es una **pareja**: dos sitios con un Kafka cada uno, replicación entr
 por sitio y las aplicaciones que siguen el rol de su sitio. Así se ve en reposo, con CO activo.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','fontSize':'14px'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','edgeLabelBackground':'#ffffff','labelBackground':'#ffffff','labelBoxBkgColor':'#ffffff','labelTextColor':'#111827','fontSize':'14px'}}}%%
 flowchart LR
     CLI([Productores y consumidores<br/>del banco])
 
@@ -90,7 +90,7 @@ Al terminar, el dibujo queda espejado: CA activo, CO pasivo.
 ## Cómo opera
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','fontSize':'14px'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','edgeLabelBackground':'#ffffff','labelBackground':'#ffffff','labelBoxBkgColor':'#ffffff','labelTextColor':'#111827','fontSize':'14px'}}}%%
 flowchart TD
     OP([El operador solicita la operación<br/>y declara la dirección]) --> DESC[Descubrir el estado real<br/>de ambos sitios]
     DESC --> COH{¿El estado es<br/>reconocible?}
