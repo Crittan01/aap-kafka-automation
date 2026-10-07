@@ -10,6 +10,83 @@ correcto y confirmar el resultado.
 
 ---
 
+## El ambiente
+
+La unidad es una **pareja**: dos sitios con un Kafka cada uno, replicación entre ellos, un proxy
+por sitio y las aplicaciones que siguen el rol de su sitio. Así se ve en reposo, con CO activo.
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','fontSize':'14px'}}}%%
+flowchart LR
+    CLI([Productores y consumidores<br/>del banco])
+
+    subgraph CO["CO · ACTIVO"]
+        direction TB
+        PCO["Proxy CO<br/>➌ apunta a Kafka CO"]
+        KCO[("Kafka CO<br/>recibe el tráfico")]
+        ACO["consumidor<br/>➍ 1 réplica"]
+        MMA["MirrorMaker ca→co<br/>➋ PASIVO"]
+    end
+
+    subgraph CA["CA · pasivo"]
+        direction TB
+        PCA["Proxy CA<br/>apunta a Kafka CA"]
+        KCA[("Kafka CA<br/>copia de respaldo")]
+        ACA["consumidor<br/>➎ 0 réplicas"]
+        MMB["MirrorMaker co→ca<br/>➊ ACTIVO"]
+    end
+
+    CLI --> PCO
+    PCO --> KCO
+    KCO --> ACO
+    KCO -. "lee" .-> MMB
+    MMB == "replica" ==> KCA
+    PCA --> KCA
+    MMA -. "apagado" .-> KCO
+
+    classDef activo   fill:#cdeadb,stroke:#136c46,color:#111827,stroke-width:2px
+    classDef pasivo   fill:#eef2f7,stroke:#9aa4b0,color:#5a636e,stroke-width:1px
+    classDef kafka    fill:#e3eaf5,stroke:#2b46ae,color:#111827,stroke-width:1.5px
+    classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
+
+    class PCO,ACO,MMB activo
+    class PCA,ACA,MMA pasivo
+    class KCO,KCA kafka
+    class CLI externo
+```
+
+En verde, lo que está encendido o sirviendo tráfico ahora. En gris, lo que está en reposo
+esperando su turno.
+
+### Lo que hay que leer de ahí
+
+**El MirrorMaker vive en el sitio destino, no en el origen.** El que replica de CO hacia CA
+—el que está encendido— está dibujado dentro de CA. Lee del Kafka de CO y escribe en el de CA.
+Es la asimetría más importante del diseño y la que más confusión genera: *el que trabaja no está
+donde nace el dato, está donde el dato llega*.
+
+**El sitio activo se deduce de ahí.** No está configurado en ninguna parte: activo es aquel
+desde el cual se está replicando.
+
+**Cada proxy apunta a su propio Kafka** mientras no haya pasado nada. Por eso el destino del
+proxy no sirve para saber quién está activo: en reposo los dos se ven iguales.
+
+### Lo que el failover cambia, en ese orden
+
+Los cinco números del diagrama son las cinco acciones del contrato, en el orden en que se aplican:
+
+| | Qué cambia | Por qué en ese momento |
+|---|---|---|
+| ➊ | `co→ca` pasa a **PASIVO** | Primero se apaga la replicación en curso |
+| ➋ | `ca→co` pasa a **ACTIVO** | Recién entonces se enciende la inversa. Las dos a la vez harían circular los mensajes entre sitios |
+| ➌ | El proxy de CO pasa a apuntar al **Kafka de CA** | Los clientes conservan su dirección y pasan a ser servidos por CA |
+| ➍ | El consumidor de CO baja a **0 réplicas** | Primero se detiene el que deja de ser activo |
+| ➎ | El consumidor de CA sube a **1 réplica** | Recién entonces se levanta el que asume. Los dos arriba se pelearían las particiones |
+
+Al terminar, el dibujo queda espejado: CA activo, CO pasivo.
+
+---
+
 ## Cómo opera
 
 ```mermaid
