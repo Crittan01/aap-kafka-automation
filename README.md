@@ -18,6 +18,7 @@ por sitio y las aplicaciones que siguen el rol de su sitio. Así se ve en reposo
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','edgeLabelBackground':'#ffffff','labelBackground':'#ffffff','labelBoxBkgColor':'#ffffff','labelTextColor':'#111827','fontSize':'14px'}}}%%
 flowchart LR
+    AAP["AAP · AWX<br/>descubre, decide y aplica<br/>contra la API de cada sitio"]
     CLI([Productores y consumidores<br/>del banco])
 
     subgraph CO["CO · ACTIVO"]
@@ -36,6 +37,8 @@ flowchart LR
         MMB["MirrorMaker co→ca<br/>➊ ACTIVO"]
     end
 
+    AAP -.-> CO
+    AAP -.-> CA
     CLI --> PCO
     PCO --> KCO
     KCO --> ACO
@@ -48,15 +51,19 @@ flowchart LR
     classDef pasivo   fill:#eef2f7,stroke:#9aa4b0,color:#5a636e,stroke-width:1px
     classDef kafka    fill:#e3eaf5,stroke:#2b46ae,color:#111827,stroke-width:1.5px
     classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
+    classDef orquesta fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:2px
 
     class PCO,ACO,MMB activo
     class PCA,ACA,MMA pasivo
     class KCO,KCA kafka
     class CLI externo
+    class AAP orquesta
 ```
 
 En verde, lo que está encendido o sirviendo tráfico ahora. En gris, lo que está en reposo
-esperando su turno.
+esperando su turno. Las líneas punteadas desde AAP son las únicas que representan a la
+automatización: **no se interpone en el camino del dato**, solo lee y modifica configuración
+a través de la API de OpenShift de cada sitio.
 
 ### Lo que hay que leer de ahí
 
