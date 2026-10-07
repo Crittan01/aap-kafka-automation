@@ -90,7 +90,65 @@ Los cinco números del diagrama son las cinco acciones del contrato, en el orden
 | ➍ | El consumidor de CO baja a **0 réplicas** | Primero se detiene el que deja de ser activo |
 | ➎ | El consumidor de CA sube a **1 réplica** | Recién entonces se levanta el que asume. Los dos arriba se pelearían las particiones |
 
-Al terminar, el dibujo queda espejado: CA activo, CO pasivo.
+### Así queda al terminar
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','edgeLabelBackground':'#ffffff','labelBackground':'#ffffff','labelBoxBkgColor':'#ffffff','labelTextColor':'#111827','fontSize':'14px'}}}%%
+flowchart LR
+    AAP["AAP · AWX<br/>ya terminó<br/>y verificó el resultado"]
+    CLI([Productores y consumidores<br/>del banco<br/>misma dirección de siempre])
+
+    subgraph CO2["CO · pasivo"]
+        direction TB
+        PCO2["Proxy CO<br/>➌ ahora apunta a Kafka CA"]
+        KCO2[("Kafka CO<br/>copia de respaldo")]
+        ACO2["consumidor<br/>➍ 0 réplicas"]
+        MMA2["MirrorMaker ca→co<br/>➋ ACTIVO"]
+    end
+
+    subgraph CA2["CA · ACTIVO"]
+        direction TB
+        PCA2["Proxy CA<br/>apunta a Kafka CA"]
+        KCA2[("Kafka CA<br/>recibe el tráfico")]
+        ACA2["consumidor<br/>➎ 1 réplica"]
+        MMB2["MirrorMaker co→ca<br/>➊ PASIVO"]
+    end
+
+    AAP -.-> CO2
+    AAP -.-> CA2
+    CLI --> PCO2
+    PCO2 == "cruza al otro sitio" ==> KCA2
+    KCA2 --> ACA2
+    KCA2 -. "lee" .-> MMA2
+    MMA2 == "replica" ==> KCO2
+    PCA2 --> KCA2
+    MMB2 -. "apagado" .-> KCA2
+
+    classDef activo   fill:#cdeadb,stroke:#136c46,color:#111827,stroke-width:2px
+    classDef pasivo   fill:#eef2f7,stroke:#9aa4b0,color:#5a636e,stroke-width:1px
+    classDef kafka    fill:#e3eaf5,stroke:#2b46ae,color:#111827,stroke-width:1.5px
+    classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
+    classDef orquesta fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:2px
+
+    class PCO2,ACA2,MMA2 activo
+    class PCA2,ACO2,MMB2 pasivo
+    class KCO2,KCA2 kafka
+    class CLI externo
+    class AAP orquesta
+```
+
+Es el mismo dibujo espejado, con tres detalles que vale mirar:
+
+**Los clientes entran por el mismo lugar.** Siguen llegando al proxy de CO, con la misma
+dirección de siempre. Lo que cambió es a dónde los manda ese proxy: ahora cruza al Kafka de CA.
+Por eso del lado del banco no hay que reconfigurar nada.
+
+**El copión se dio vuelta.** Ahora el que trabaja es el que vive en CO y lee desde CA. Sigue
+cumpliéndose la regla: el que copia vive en el sitio al que llegan los datos.
+
+**El proxy de CA no se tocó.** Sigue apuntando a su propio Kafka, que ahora es el activo, así
+que está bien. Devolver el proxy de CO a su sitio es trabajo del failback.
+
 
 ---
 
