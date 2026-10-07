@@ -17,35 +17,37 @@ por sitio y las aplicaciones que siguen el rol de su sitio. Así se ve en reposo
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','edgeLabelBackground':'#ffffff','labelBackground':'#ffffff','labelBoxBkgColor':'#ffffff','labelTextColor':'#111827','fontSize':'14px'}}}%%
-flowchart LR
-    AAP["AAP · AWX<br/>descubre, decide y aplica<br/>contra la API de cada sitio"]
+flowchart TB
     CLI([Productores y consumidores<br/>del banco])
 
     subgraph CO["CO · ACTIVO"]
-        direction TB
+        direction LR
         PCO["Proxy CO<br/>➌ apunta a Kafka CO"]
         KCO[("Kafka CO<br/>recibe el tráfico")]
-        ACO["consumidor<br/>➍ 1 réplica"]
+        ACO["consumidor CO<br/>➍ 1 réplica"]
         MMA["MirrorMaker ca→co<br/>➋ PASIVO"]
+        PCO --> KCO
+        KCO --> ACO
+        MMA -. "apagado" .-> KCO
     end
 
     subgraph CA["CA · pasivo"]
-        direction TB
+        direction LR
         PCA["Proxy CA<br/>apunta a Kafka CA"]
         KCA[("Kafka CA<br/>copia de respaldo")]
-        ACA["consumidor<br/>➎ 0 réplicas"]
+        ACA["consumidor CA<br/>➎ 0 réplicas"]
         MMB["MirrorMaker co→ca<br/>➊ ACTIVO"]
+        PCA --> KCA
+        KCA --> ACA
+        MMB == "replica" ==> KCA
     end
 
+    AAP["AAP · AWX<br/>descubre, decide y aplica<br/>contra la API de cada sitio"]
+
+    CLI --> PCO
+    KCO -. "lee" .-> MMB
     AAP -.-> CO
     AAP -.-> CA
-    CLI --> PCO
-    PCO --> KCO
-    KCO --> ACO
-    KCO -. "lee" .-> MMB
-    MMB == "replica" ==> KCA
-    PCA --> KCA
-    MMA -. "apagado" .-> KCO
 
     classDef activo   fill:#cdeadb,stroke:#136c46,color:#111827,stroke-width:2px
     classDef pasivo   fill:#eef2f7,stroke:#9aa4b0,color:#5a636e,stroke-width:1px
@@ -53,7 +55,7 @@ flowchart LR
     classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
     classDef orquesta fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:2px
 
-    class PCO,ACO,MMB activo
+    class PCO,KCO,ACO,MMB activo
     class PCA,ACA,MMA pasivo
     class KCO,KCA kafka
     class CLI externo
@@ -94,35 +96,37 @@ Los cinco números del diagrama son las cinco acciones del contrato, en el orden
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#eef2f7','primaryTextColor':'#111827','primaryBorderColor':'#5a6474','lineColor':'#5a6474','secondaryColor':'#e3eaf5','tertiaryColor':'#ffffff','background':'#ffffff','mainBkg':'#eef2f7','textColor':'#111827','edgeLabelBackground':'#ffffff','labelBackground':'#ffffff','labelBoxBkgColor':'#ffffff','labelTextColor':'#111827','fontSize':'14px'}}}%%
-flowchart LR
-    AAP["AAP · AWX<br/>ya terminó<br/>y verificó el resultado"]
+flowchart TB
     CLI([Productores y consumidores<br/>del banco<br/>misma dirección de siempre])
 
-    subgraph CO2["CO · pasivo"]
-        direction TB
-        PCO2["Proxy CO<br/>➌ ahora apunta a Kafka CA"]
-        KCO2[("Kafka CO<br/>copia de respaldo")]
-        ACO2["consumidor<br/>➍ 0 réplicas"]
-        MMA2["MirrorMaker ca→co<br/>➋ ACTIVO"]
+    subgraph CO["CO · pasivo"]
+        direction LR
+        PCO["Proxy CO<br/>➌ apunta a Kafka CA"]
+        KCO[("Kafka CO<br/>copia de respaldo")]
+        ACO["consumidor CO<br/>➍ 0 réplicas"]
+        MMA["MirrorMaker ca→co<br/>➋ ACTIVO"]
+        KCO --> ACO
+        MMA == "replica" ==> KCO
     end
 
-    subgraph CA2["CA · ACTIVO"]
-        direction TB
-        PCA2["Proxy CA<br/>apunta a Kafka CA"]
-        KCA2[("Kafka CA<br/>recibe el tráfico")]
-        ACA2["consumidor<br/>➎ 1 réplica"]
-        MMB2["MirrorMaker co→ca<br/>➊ PASIVO"]
+    subgraph CA["CA · ACTIVO"]
+        direction LR
+        PCA["Proxy CA<br/>apunta a Kafka CA"]
+        KCA[("Kafka CA<br/>recibe el tráfico")]
+        ACA["consumidor CA<br/>➎ 1 réplica"]
+        MMB["MirrorMaker co→ca<br/>➊ PASIVO"]
+        PCA --> KCA
+        KCA --> ACA
+        MMB -. "apagado" .-> KCA
     end
 
-    AAP -.-> CO2
-    AAP -.-> CA2
-    CLI --> PCO2
-    PCO2 == "cruza al otro sitio" ==> KCA2
-    KCA2 --> ACA2
-    KCA2 -. "lee" .-> MMA2
-    MMA2 == "replica" ==> KCO2
-    PCA2 --> KCA2
-    MMB2 -. "apagado" .-> KCA2
+    AAP["AAP · AWX<br/>ya terminó<br/>y verificó el resultado"]
+
+    CLI --> PCO
+    PCO == "cruza al otro sitio" ==> KCA
+    KCA -. "lee" .-> MMA
+    AAP -.-> CO
+    AAP -.-> CA
 
     classDef activo   fill:#cdeadb,stroke:#136c46,color:#111827,stroke-width:2px
     classDef pasivo   fill:#eef2f7,stroke:#9aa4b0,color:#5a636e,stroke-width:1px
@@ -130,14 +134,15 @@ flowchart LR
     classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
     classDef orquesta fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:2px
 
-    class PCO2,ACA2,MMA2 activo
-    class PCA2,ACO2,MMB2 pasivo
-    class KCO2,KCA2 kafka
+    class PCA,KCA,ACA,MMA activo
+    class PCO,ACO,MMB pasivo
+    class KCO,KCA kafka
     class CLI externo
     class AAP orquesta
 ```
 
-Es el mismo dibujo espejado, con tres detalles que vale mirar:
+Es el mismo dibujo con los colores cambiados de lado. CO sigue arriba y CA abajo, y cada pieza
+en el mismo lugar, para que la comparación sea directa. Tres detalles que vale mirar:
 
 **Los clientes entran por el mismo lugar.** Siguen llegando al proxy de CO, con la misma
 dirección de siempre. Lo que cambió es a dónde los manda ese proxy: ahora cruza al Kafka de CA.
