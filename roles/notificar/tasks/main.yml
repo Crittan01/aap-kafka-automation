@@ -26,13 +26,17 @@
              if kafka_estado.replicacion.offsets[kafka_estado.activo] | default({})
                 == kafka_estado.replicacion.offsets[kafka_estado.pasivo] | default({})
              else 'CON ATRASO') }}
-        # Un proxy fuera de su sitio significa que los clientes que entran
-        # por ahi se atienden contra el otro cluster. El failover redirige el
-        # del sitio que sale a proposito, y devolverlo es parte del failback,
-        # que todavia no esta construido. Mientras tanto se dice, en vez de
-        # afirmar que el estado esta bien sin haberlo mirado.
+        # Se avisa por el proxy que quedo redirigido fuera de su sitio Y a dar
+        # al pasivo: las aplicaciones que entran por ahi estan contra el
+        # cluster que no manda. Las otras dos formas no son novedad. Apuntar a
+        # su propio sitio es lo normal, incluso cuando ese sitio es el pasivo,
+        # porque ahi las aplicaciones estan en cero. Y apuntar al activo sin
+        # ser su sitio es el redirect que hace el failover a proposito, para
+        # que quien siga entrando por el sitio que salio llegue a los datos.
+        # Deshacerlo es parte del failback, que todavia no esta construido.
         _nt_px_fuera: >-
           {{ kafka_estado.sitios | default({}) | dict2items
+             | rejectattr('value.proxy_destino_sitio', 'eq', kafka_estado.activo)
              | selectattr('value.proxy_redirigido', 'defined')
              | selectattr('value.proxy_redirigido')
              | map(attribute='key') | map('upper') | list }}
@@ -41,8 +45,9 @@
           {{ ('el proxy de ' ~ _nt_px_fuera | first ~ ' apunta') if _nt_uno_px | bool
           else ('los proxies de ' ~ _nt_px_fuera | join(' y ') ~ ' apuntan') }}
         _nt_aviso_px: >-
-          ATENCION: {{ _nt_px_sujeto }} fuera de su sitio, asi que
-          {{ 'atiende' if _nt_uno_px | bool else 'atienden' }} contra otro cluster.
+          ATENCION: {{ _nt_px_sujeto }} al sitio pasivo, asi que las
+          aplicaciones que entren por {{ 'ahi' if _nt_uno_px | bool else 'ahi' }}
+          leen y escriben contra el cluster que no manda.
           {{ 'Devolverlo' if _nt_uno_px | bool else 'Devolverlos' }} es parte del failback.
         _nt_nota_ok: >-
           {{ ('No se modifico nada.' if kafka_plan.nada_que_hacer | bool else

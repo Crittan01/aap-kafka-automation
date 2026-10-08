@@ -55,13 +55,27 @@
           "fontType": "Monospace", "size": "Small", "wrap": true }
 {%- endif %}
 
-{#- ─── A donde apunta el proxy de cada sitio ─── -#}
+{#- ─── A donde entra el cliente y en que cluster termina ─────────────────
+       Apuntar fuera de su sitio no es bueno ni malo por si solo: depende de
+       quien sea el activo. Si lleva al activo, el proxy esta haciendo su
+       trabajo. Si lleva al pasivo, las aplicaciones que entran por ahi estan
+       contra el cluster que no manda. Se dice cual de los dos es.         -#}
 {%- if _nt.mostrar_proxies | default(false) and kafka_estado.sitios | default({}) %},
-        { "type": "TextBlock", "text": "PROXIES", "weight": "Bolder", "size": "Small", "spacing": "Medium", "wrap": true },
+        { "type": "TextBlock", "text": "POR DONDE ENTRA EL CLIENTE", "weight": "Bolder", "size": "Small", "spacing": "Medium", "wrap": true },
 {%- set px = [] -%}
 {%- for s, d in kafka_estado.sitios.items() -%}
-  {%- set _ = px.append(s | upper ~ "  →  Kafka de " ~ (d.proxy_destino_sitio | default('?')) | upper
-      ~ ("    FUERA DE SU SITIO" if d.proxy_redirigido | default(false) else "")) -%}
+  {%- set dst = d.proxy_destino_sitio | default('') -%}
+  {%- if dst == '' -%}
+    {%- set nota = "destino sin resolver" -%}
+  {%- elif dst == s -%}
+    {%- set nota = "su propio sitio" -%}
+  {%- elif dst == kafka_estado.activo -%}
+    {%- set nota = "redirigido al ACTIVO" -%}
+  {%- else -%}
+    {%- set nota = "ATIENDE CONTRA EL PASIVO" -%}
+  {%- endif -%}
+  {%- set _ = px.append("quien entra por " ~ s | upper ~ "   lee y escribe en "
+      ~ (dst | default('?', true)) | upper ~ "   " ~ nota) -%}
 {%- endfor %}
         { "type": "TextBlock", "text": {{ (px | join("\n")) | to_json }},
           "fontType": "Monospace", "size": "Small", "wrap": true }
