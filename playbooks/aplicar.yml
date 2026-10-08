@@ -9,7 +9,7 @@
 # Asi la diferencia de comportamiento es declarada, no inferida: si se espera
 # un plan aprobado y no llega, falla en vez de saltearse en silencio.
 #
-# ansible-playbook playbooks/aplicar.yml -e pareja=core -e operacion=rotacion -e direccion=co_a_ca
+# ansible-playbook playbooks/aplicar.yml -e pareja=core -e operacion=failover -e direccion=co_a_ca
 
 - name: Aplicar la operacion aprobada
   hosts: localhost

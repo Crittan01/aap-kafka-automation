@@ -1,16 +1,17 @@
-# Automatización de Rotación — Kafka Activo/Pasivo
+# Automatización de Failover — Kafka Activo/Pasivo
 
-Automatiza en Ansible Automation Platform la **rotación de roles** entre los dos sitios de un
-clúster Kafka activo/pasivo sobre OpenShift: invierte la replicación de MirrorMaker 2, conmuta
-el tráfico hacia el sitio que asume la operación y ajusta las aplicaciones de cada sitio a su
-nuevo rol. Es la inversión planificada, con **los dos sitios sanos**.
+Automatiza en Ansible Automation Platform el **failover** entre los dos sitios de un clúster
+Kafka activo/pasivo sobre OpenShift: invierte la replicación de MirrorMaker 2, conmuta el
+tráfico hacia el sitio que asume la operación y ajusta las aplicaciones de cada sitio a su
+nuevo rol.
 
-La decisión de ejecutarla sigue siendo del operador. Lo que se automatiza es todo lo demás:
+La decisión de ejecutarlo sigue siendo del operador. Lo que se automatiza es todo lo demás:
 establecer el estado real, verificar que la operación sea posible, aplicarla en el orden correcto
 y confirmar el resultado.
 
-> El **failover por caída** del sitio activo es otra operación, con otro estado final, y no está
-> implementada. Pedirla se detiene sin tocar nada. Ver [Alcance](#alcance).
+> Opera con **los dos sitios alcanzables**, que es la forma en que el failover se ejecuta de
+> manera planificada o como simulacro. La variante con el sitio activo **realmente caído** es
+> otra operación y no está implementada. Ver [Alcance](#alcance).
 
 ---
 
@@ -84,7 +85,7 @@ desde el cual se está replicando.
 **El destino del proxy no sirve para saber quién está activo.** Para eso se mira qué MirrorMaker
 está encendido: el que replica *desde* el activo.
 
-### Lo que la rotación cambia, en ese orden
+### Lo que el failover cambia, en ese orden
 
 Las acciones del contrato, en el orden en que se aplican:
 
@@ -97,7 +98,7 @@ Las acciones del contrato, en el orden en que se aplican:
 | ➎ | El consumidor de CO baja a **0 réplicas** | Primero se detiene el que deja de ser activo |
 | ➏ | El consumidor de CA sube a **1 réplica** | Recién entonces se levanta el que asume. Los dos arriba se pelearían las particiones |
 
-La ➍ parece redundante en la primera rotación, porque el proxy de CA ya apunta a su propio Kafka.
+La ➍ parece redundante la primera vez, porque el proxy de CA ya apunta a su propio Kafka.
 Importa en la siguiente: sin ella, el proxy del sitio que vuelve a ser activo se queda apuntando
 al otro, y quien entre por ahí termina atendido contra el clúster pasivo. Al terminar, la
 verificación **exige** que los dos lleven al activo.
@@ -241,9 +242,9 @@ dos MirrorMaker y su proxy.
 
 | | |
 |---|---|
-| **Implementado** | `rotacion` — inversión de roles de una pareja, **con los dos sitios alcanzables**, en cualquiera de las dos direcciones |
-| **No implementado** | `failover` por caída del sitio activo. Pedirlo se detiene sin tocar nada |
-| **Previsto** | Failback con resincronización, y parejas adicionales |
+| **Implementado** | `failover` de una pareja, **con los dos sitios alcanzables**, en cualquiera de las dos direcciones |
+| **No implementado** | Failover con el sitio activo **realmente caído**. El estado encontrado no corresponde a ninguna transición declarada y se detiene sin tocar nada |
+| **Previsto** | Failback con resincronización, rotación de roles, y parejas adicionales |
 
 Incorporar una pareja adicional es agregar un bloque de datos: la automatización no contiene
 referencias a ninguna pareja en particular. Incorporar una operación es agregar un bloque a
@@ -251,8 +252,8 @@ referencias a ninguna pareja en particular. Incorporar una operación es agregar
 
 ### Por qué el sitio caído es otra operación
 
-La rotación conmuta la operación entre dos sitios que responden. **Cuatro de sus seis acciones
-escriben en el sitio que deja de ser activo**: invertir su MirrorMaker, conmutar su proxy y
+El failover implementado conmuta la operación entre dos sitios que responden. **Cuatro de sus
+seis acciones escriben en el sitio que deja de ser activo**: invertir su MirrorMaker, conmutar su proxy y
 detener sus aplicaciones.
 
 Con el sitio activo realmente caído, tres de esas cuatro son imposibles, no solo riesgosas:
@@ -270,7 +271,8 @@ evidencia.
 Un sitio caído no es, entonces, el mismo escenario con una validación relajada: es una transición
 distinta, con otro estado final, que implica aceptar que durante la contingencia no hay
 replicación de vuelta. Eso es una decisión de negocio, no de implementación. Mientras no esté
-tomada, `failover` no tiene transición declarada y pedirlo se detiene sin modificar nada.
+tomada, ese estado no corresponde a ninguna transición declarada y la operación se detiene sin
+modificar nada.
 
 ---
 
@@ -347,7 +349,7 @@ Tras cada cambio espera a que el recurso quede efectivamente aplicado antes de c
 ### `proxy_target` — conmuta el destino del tráfico
 
 Cambia el destino al que el proxy dirige a los productores y consumidores. Recorre **todos** los
-proxies que el plan nombre: con uno por sitio, la rotación conmuta el del sitio que sale y el del
+proxies que el plan nombre: con uno por sitio, el failover conmuta el del sitio que sale y el del
 que llega, para que los dos terminen en el sitio activo.
 
 Antes de tocar nada verifica que el destino sea alcanzable. Es la validación que evita el modo

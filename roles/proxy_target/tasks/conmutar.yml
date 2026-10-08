@@ -7,7 +7,7 @@
     _pt_sitio: "{{ _pt_s }}"
     _pt_px: "{{ parejas[pareja].proxy[_pt_s] }}"
     _pt_destino: "{{ parejas[pareja].proxy[_pt_s].destinos[_pt_d] }}"
-    # Las dos conmutaciones de una rotacion pueden tener el mismo destino, asi
+    # Las dos conmutaciones de una operacion pueden tener el mismo destino, asi
     # que el nombre de la tarea lleva tambien de que sitio es el proxy.
     _pt_rotulo: "{{ _pt_s }} hacia {{ parejas[pareja].proxy[_pt_s].destinos[_pt_d] }}"
 

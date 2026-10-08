@@ -38,8 +38,8 @@
 # Se exige de los dos proxies, no solo del que la transicion conmuta. Quien
 # entra por cualquiera de los dos tiene que terminar en el sitio activo: es lo
 # que declara el resumen de URLs del procedimiento operativo para cada
-# escenario. Antes se exigia uno y del otro solo se avisaba, y asi una rotacion
-# de ida y vuelta dejaba el proxy del sitio que volvia atendiendo contra el
+# escenario. Antes se exigia uno y del otro solo se avisaba, y asi una ida
+# y vuelta dejaba el proxy del sitio que volvia atendiendo contra el
 # pasivo. La condicion se evalua solo si la transicion declara donde van.
 - name: Verificar a donde lleva cada proxy
   vars:

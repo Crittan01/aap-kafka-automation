@@ -1,6 +1,6 @@
 ---
 # Simulacro: valida que la operacion seria posible. No escribe nada.
-# ansible-playbook playbooks/preflight.yml -e pareja=core -e operacion=rotacion
+# ansible-playbook playbooks/preflight.yml -e pareja=core -e operacion=failover
 
 - name: Simular la operacion
   hosts: localhost

@@ -10,19 +10,24 @@ version: 2
 
 transiciones:
 
-  # Seccion 3 del procedimiento operativo de BPD: inversion planificada de
-  # roles con los dos sitios sanos. No es el failover de la seccion 2.1, que
-  # supone el sitio activo caido y pide un estado final distinto: la matriz de
-  # decision de la seccion 6 marca CO->CA en OFF para failover y en PASIVO
-  # para rotacion. Mientras el failover con sitio caido siga trabado en
-  # decisiones de BPD, 'failover' no tiene transicion y se detiene solo.
-  - id: ROTACION
-    descripcion: Inversion planificada de roles entre dos sitios sanos.
-    operacion: rotacion
+  # El failover tal como lo define la seccion 1.2 del procedimiento operativo
+  # de BPD: "hacer un switch entre un sitio operativo (CO) a un sitio alterno
+  # (CA) de forma segura", y "se puede realizar en cualquier momento". El
+  # "CO falla de forma inesperada" de la seccion 2.1 es un escenario de uso,
+  # no la definicion: el OFF de su tabla es consecuencia de que CO no este.
+  #
+  # Esta transicion exige los dos sitios alcanzables, porque cuatro de sus
+  # seis acciones escriben en el sitio que deja de ser activo. La variante con
+  # el sitio activo realmente caido es otra transicion, con otro estado final,
+  # y espera decisiones de BPD sobre RPO y sobre con que mecanismo se conmuta
+  # el trafico si el proxy a conmutar vive en el sitio caido.
+  - id: FAILOVER
+    descripcion: Switch seguro de la operacion al otro sitio, con los dos sanos.
+    operacion: failover
     aplica_a:
       - core
 
-    # El destino de los proxies no es condicion de partida: la rotacion los
+    # El destino de los proxies no es condicion de partida: la operacion los
     # lleva a los dos al sitio activo, asi que corrige el que venga torcido.
     desde:
       activo: sitio_a
@@ -48,8 +53,9 @@ transiciones:
         sentido: hacia_a
         estado: ACTIVO
       # Los dos proxies quedan apuntando al sitio activo. El resumen de URLs
-      # de la seccion 5.2 lo declara asi para cada escenario, y el paso 4 de
-      # la seccion 2.3.2 es justamente devolver el proxy del sitio que vuelve.
+      # de la seccion 5.2 lo declara asi para cada escenario -- para Failover
+      # CORE, el Kafka de CA -- y el paso 4 de la seccion 2.3.2 es justamente
+      # devolver el proxy del sitio que vuelve a ser activo.
       - rol: proxy_target
         sitio: sitio_a
         destino: sitio_b
