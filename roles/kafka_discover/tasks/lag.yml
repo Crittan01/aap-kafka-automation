@@ -6,9 +6,14 @@
 # Las tres consultas van en una sola invocacion, y ninguna recorre el
 # inventario: kafka-get-offsets acepta una expresion regular de topicos y
 # kafka-consumer-groups acepta --group repetido. Asi se abre un canal hacia el
-# pod por sitio, en vez de uno por topico mas uno por grupo mas uno. Medido
-# contra el broker del lab: 62s contra 77s, y la diferencia crece con el
-# inventario, porque el canal es lo que se repetia.
+# pod por sitio, en vez de uno por topico mas uno por grupo mas uno.
+#
+# Esto NO es mas rapido hoy. Cada CLI arranca su propia JVM y eso domina: la
+# misma invocacion repetida en el broker de CO midio entre 20s y 36s, mientras
+# que abrir el canal cuesta unos 4s. Con un topico y un grupo la diferencia
+# queda sepultada bajo esa varianza. Lo que se gana es que el costo deje de
+# crecer con el inventario: con los topicos y grupos reales de BPD serian N
+# mas M mas una invocaciones por sitio, y el failover descubre dos veces.
 #
 # La regex va anclada y con los nombres escapados: selecciona exactamente los
 # topicos declarados. Un comodin traeria los internos de Kafka y los de
