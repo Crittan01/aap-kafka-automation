@@ -3,14 +3,6 @@
 # rol. Idempotente: es un patch de spec.replicas.
 # El orden del plan importa: primero se baja el sitio que deja de ser activo.
 
-- name: Validar que hay plan
-  ansible.builtin.assert:
-    that:
-      - kafka_plan is defined
-      - kafka_plan.acciones is defined
-    fail_msg: "app_scale requiere kafka_plan (lo produce kafka_decide)"
-    quiet: true
-
 - name: Escalar las aplicaciones de cada sitio
   ansible.builtin.include_tasks: sitio.yml
   loop: "{{ kafka_plan.acciones | selectattr('rol', 'eq', 'app_scale') | list }}"

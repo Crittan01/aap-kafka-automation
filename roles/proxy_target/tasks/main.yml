@@ -1,14 +1,6 @@
 ---
 # Conmuta el destino del proxy. Un patch de targetKafkaServiceRef.
 
-- name: Validar que hay plan
-  ansible.builtin.assert:
-    that:
-      - kafka_plan is defined
-      - kafka_plan.acciones is defined
-    fail_msg: "proxy_target requiere kafka_plan (lo produce kafka_decide)"
-    quiet: true
-
 - name: Resolver la conmutacion
   vars:
     _pt_acc: "{{ kafka_plan.acciones | selectattr('rol', 'eq', 'proxy_target') | first | default({}, true) }}"

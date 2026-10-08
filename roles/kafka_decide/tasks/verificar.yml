@@ -1,6 +1,24 @@
 ---
 # Compara el estado descubierto contra el bloque 'hasta' de la transicion.
 
+# Va primero: todo lo que sigue dereferencia kafka_plan, asi que si falta hay
+# que decirlo con un mensaje util antes de que reviente con 'undefined'.
+- name: Detener si falta el plan para verificar
+  ansible.builtin.fail:
+    msg: >-
+      modo=verificar requiere kafka_plan, que produce kafka_decide en modo
+      proponer. Revisar el orden de los roles en el playbook.
+  when: kafka_plan is not defined
+
+# Los sitios salen del plan, no del estado nuevo: despues del failover el
+# activo cambio y re-derivarlos invertiria la expectativa.
+- name: Recuperar sitios del plan aprobado
+  ansible.builtin.set_fact:
+    _dc_sa: "{{ kafka_plan.sitio_a }}"
+    _dc_sb: "{{ kafka_plan.sitio_b }}"
+    _dc_mm_hacia_b: "{{ kafka_plan.mm_hacia_b }}"
+    _dc_mm_hacia_a: "{{ kafka_plan.mm_hacia_a }}"
+
 - name: Verificar estado final
   vars:
     _dc_esp: "{{ _dc_t.hasta }}"
