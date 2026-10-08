@@ -26,9 +26,28 @@
              if kafka_estado.replicacion.offsets[kafka_estado.activo] | default({})
                 == kafka_estado.replicacion.offsets[kafka_estado.pasivo] | default({})
              else 'CON ATRASO') }}
+        # Un proxy fuera de su sitio significa que los clientes que entran
+        # por ahi se atienden contra el otro cluster. El failover redirige el
+        # del sitio que sale a proposito, y devolverlo es parte del failback,
+        # que todavia no esta construido. Mientras tanto se dice, en vez de
+        # afirmar que el estado esta bien sin haberlo mirado.
+        _nt_px_fuera: >-
+          {{ kafka_estado.sitios | default({}) | dict2items
+             | selectattr('value.proxy_redirigido', 'defined')
+             | selectattr('value.proxy_redirigido')
+             | map(attribute='key') | map('upper') | list }}
+        _nt_uno_px: "{{ _nt_px_fuera | length == 1 }}"
+        _nt_px_sujeto: >-
+          {{ ('el proxy de ' ~ _nt_px_fuera | first ~ ' apunta') if _nt_uno_px | bool
+          else ('los proxies de ' ~ _nt_px_fuera | join(' y ') ~ ' apuntan') }}
+        _nt_aviso_px: >-
+          ATENCION: {{ _nt_px_sujeto }} fuera de su sitio, asi que
+          {{ 'atiende' if _nt_uno_px | bool else 'atienden' }} contra otro cluster.
+          {{ 'Devolverlo' if _nt_uno_px | bool else 'Devolverlos' }} es parte del failback.
         _nt_nota_ok: >-
-          {{ 'No se modifico nada.' if kafka_plan.nada_que_hacer | bool else
-             'Se verificaron los datos: ninguna particion falta y los consumidores conservan su posicion.' }}
+          {{ ('No se modifico nada.' if kafka_plan.nada_que_hacer | bool else
+              'Se verificaron los datos: ninguna particion falta y los consumidores conservan su posicion.')
+             ~ (' ' ~ _nt_aviso_px if _nt_px_fuera | length > 0 else '') }}
         _nt_mms: >-
           {{ (kafka_estado.mirrormakers | default({}) | dict2items
               | map(attribute='key') | zip(kafka_estado.mirrormakers | default({}) | dict2items
@@ -39,21 +58,26 @@
              if kafka_plan.nada_que_hacer | bool
              else 'Propuesta de ' ~ kafka_plan.operacion ~ ' — pendiente de aprobacion' }}
         _nt_nota_prop: >-
-          {{ 'No se va a modificar nada. El estado es coherente.'
-             if kafka_plan.nada_que_hacer | bool
-             else 'Nada se modifico todavia. El flujo espera una decision.' }}
+          {{ ('No se va a modificar nada.' if kafka_plan.nada_que_hacer | bool
+              else 'Nada se modifico todavia. El flujo espera una decision.')
+             ~ (' ' ~ _nt_aviso_px if _nt_px_fuera | length > 0
+                else (' El estado es coherente.' if kafka_plan.nada_que_hacer | bool else '')) }}
         _nt_variantes:
           propuesta:
             estado: "{{ _nt_titulo_prop }}"
             color: "{{ 'Accent' if kafka_plan.nada_que_hacer | bool else 'Warning' }}"
             hechos:
               - [Operacion, "{{ kafka_plan.operacion }} · dejar activo a {{ kafka_plan.direccion | split('_a_') | last | upper }}"]
+              # Se nombran por su rol, no por la maniobra. En un no-op el
+              # destino pedido es el sitio activo, asi que llamar "destino" al
+              # pasivo diria algo distinto de lo que el operador pidio.
               - [Sitio activo, "{{ _nt_desc_sa }}"]
-              - [Sitio destino, "{{ _nt_desc_sb }}"]
+              - [Sitio pasivo, "{{ _nt_desc_sb }}"]
               - [Replicacion, "{{ _nt_repl }}"]
               - [Validaciones, "{{ 'no aplican: no hay nada que hacer' if kafka_plan.nada_que_hacer | bool else 'todas superadas' }}"]
             mostrar_datos: true
-            mostrar_acciones: true
+            mostrar_proxies: true
+            mostrar_acciones: "{{ not kafka_plan.nada_que_hacer | bool }}"
             nota: "{{ _nt_nota_prop }}"
           resultado:
             estado: "{{ 'Sin cambios: ya se estaba en el destino' if kafka_plan.nada_que_hacer | bool else 'Completado y verificado' }}"
@@ -62,6 +86,7 @@
               - [Estado alcanzado, "activo: {{ kafka_estado.activo | upper }}   pasivo: {{ kafka_estado.pasivo | upper }}"]
               - [Acciones aplicadas, "{{ kafka_plan.acciones | length }}"]
             mostrar_verificacion: true
+            mostrar_proxies: true
             nota: "{{ _nt_nota_ok }}"
           fallo:
             estado: "La ejecucion se detuvo"
