@@ -1,62 +1,61 @@
 ---
-# Offsets y particiones sub-replicadas via Admin API de Kafka.
-# No existen como recurso de OpenShift: se consultan ejecutando en un broker.
+# Offsets, marcadores de los grupos de consumo y particiones sub-replicadas.
+# No existen como recurso de OpenShift: se consultan corriendo los CLI de
+# Kafka dentro de un broker.
+#
+# Las tres consultas van en una sola invocacion, y ninguna recorre el
+# inventario: kafka-get-offsets acepta una expresion regular de topicos y
+# kafka-consumer-groups acepta --group repetido. Asi se abre un canal hacia el
+# pod por sitio, en vez de uno por topico mas uno por grupo mas uno. Medido
+# contra el broker del lab: 62s contra 77s, y la diferencia crece con el
+# inventario, porque el canal es lo que se repetia.
+#
+# La regex va anclada y con los nombres escapados: selecciona exactamente los
+# topicos declarados. Un comodin traeria los internos de Kafka y los de
+# MirrorMaker, que no son de la aplicacion: en el lab son 7 de 8 topicos.
 
-- name: Consultar offsets en {{ _kd_s }}
+- name: Consultar offsets, marcadores y replicacion en {{ _kd_s }}
+  vars:
+    _kd_re_top: >-
+      ^({{ _kd_p.topicos_aplicacion | map('regex_escape') | join('|') }})$
+    _kd_arg_grp: >-
+      {{ _kd_p.grupos_consumo | default([])
+         | map('regex_replace', '^(.*)$', '--group \1') | join(' ') }}
   kubernetes.core.k8s_exec:
     namespace: "{{ _kd_cfg.namespace }}"
     pod: "{{ _kd_broker }}"
     container: kafka
+    # El separador delimita las tres salidas. Distinguirlas por su forma
+    # funcionaria hoy, pero depende de que ningun CLI cambie su formato.
     command: >-
-      bin/kafka-get-offsets.sh --bootstrap-server localhost:9092
-      --topic {{ item }}
-    host: "{{ _kd_cfg.api }}"
-    api_key: "{{ kafka_tokens[_kd_s] }}"
-    validate_certs: "{{ kafka_validate_certs }}"
-  loop: "{{ _kd_p.topicos_aplicacion }}"
-  register: _kd_r_off
-  failed_when: false
-  changed_when: false
-
-- name: Consultar el marcador de los grupos de consumo en {{ _kd_s }}
-  kubernetes.core.k8s_exec:
-    namespace: "{{ _kd_cfg.namespace }}"
-    pod: "{{ _kd_broker }}"
-    container: kafka
-    command: >-
+      bash -c "bin/kafka-get-offsets.sh --bootstrap-server localhost:9092
+      --topic '{{ _kd_re_top | trim }}'; echo ===kdr===;
       bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092
-      --describe --group {{ item }}
+      --describe {{ _kd_arg_grp | trim }}; echo ===kdr===;
+      bin/kafka-topics.sh --bootstrap-server localhost:9092
+      --describe --under-replicated-partitions"
     host: "{{ _kd_cfg.api }}"
     api_key: "{{ kafka_tokens[_kd_s] }}"
     validate_certs: "{{ kafka_validate_certs }}"
-  loop: "{{ _kd_p.grupos_consumo | default([]) }}"
-  register: _kd_r_grp
+  register: _kd_r_lag
   failed_when: false
   changed_when: false
 
-- name: Consultar particiones sub-replicadas en {{ _kd_s }}
-  kubernetes.core.k8s_exec:
-    namespace: "{{ _kd_cfg.namespace }}"
-    pod: "{{ _kd_broker }}"
-    container: kafka
-    command: >-
-      bin/kafka-topics.sh --bootstrap-server localhost:9092
-      --describe --under-replicated-partitions
-    host: "{{ _kd_cfg.api }}"
-    api_key: "{{ kafka_tokens[_kd_s] }}"
-    validate_certs: "{{ kafka_validate_certs }}"
-  register: _kd_r_urp
-  failed_when: false
-  changed_when: false
+# Sin las tres secciones la invocacion no llego a completarse y lo que haya
+# llegado no se puede atribuir. Se dejan vacias: los offsets quedan sin tomar
+# y los prechecks, que exigen replicacion.medida, se detienen.
+- name: Separar las tres salidas de {{ _kd_s }}
+  vars:
+    _kd_partes: "{{ (_kd_r_lag.stdout | default('')).split('===kdr===') }}"
+  ansible.builtin.set_fact:
+    _kd_sec: "{{ _kd_partes if _kd_partes | length == 3 else ['', '', ''] }}"
 
 - name: Extraer los marcadores de los grupos de consumo en {{ _kd_s }}
   vars:
     # cada linea: "grupo topico particion marcador fin lag ..."
-    _kd_salida: "{{ _kd_r_grp.results | map(attribute='stdout', default='') | join(' ') }}"
     _kd_patron: '([a-z0-9][a-z0-9-]+) +([a-z0-9][a-z0-9.-]+) +([0-9]+) +([0-9]+) +[0-9]+ +[0-9-]+'
-    _kd_filas: "{{ _kd_salida | regex_findall(_kd_patron) }}"
   ansible.builtin.set_fact:
-    _kd_marcadores: "{{ _kd_filas }}"
+    _kd_marcadores: "{{ _kd_sec[1] | regex_findall(_kd_patron) }}"
 
 # Se escribe directo en el dict del sitio: un acumulador intermedio se
 # arrastraria al siguiente sitio del recorrido.
@@ -72,12 +71,12 @@
 
 - name: Consolidar offsets de {{ _kd_s }}
   vars:
-    # kafka-get-offsets devuelve lineas "topico:particion:offset".
-    # Se unen con espacio y se extraen los pares con una sola expresion,
-    # para no depender de como venga el salto de linea.
-    _kd_pares: "{{ _kd_r_off.results | map(attribute='stdout', default='') | join(' ') | regex_findall('([^ :]+:[0-9]+):([0-9]+)') }}"
+    # kafka-get-offsets devuelve lineas "topico:particion:offset". Se extraen
+    # los pares con una sola expresion, para no depender de como venga el
+    # salto de linea.
+    _kd_pares: "{{ _kd_sec[0] | regex_findall('([^ :\n]+:[0-9]+):([0-9]+)') }}"
   ansible.builtin.set_fact:
     _kd_offsets: "{{ _kd_offsets | default({}) | combine({_kd_s: dict(_kd_pares)}) }}"
     _kd_urp: >-
       {{ _kd_urp | default({}) | combine({_kd_s:
-         (_kd_r_urp.stdout | default('') | trim | length) > 0}) }}
+         (_kd_sec[2] | trim | length) > 0}) }}

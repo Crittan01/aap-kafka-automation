@@ -47,8 +47,15 @@
     _kd_activos: >-
       {{ _kd_mms | dict2items | selectattr('value.estado', 'eq', 'ACTIVO')
          | map(attribute='key') | list }}
+    # Medida significa que hay dato de los dos sitios Y que el dato no esta
+    # vacio. Un exec que no alcanzo a responder deja el sitio presente con un
+    # dict vacio: con eso el atraso se calcularia sobre nada y el precheck de
+    # replicacion al dia pasaria sin haber mirado nada.
+    _kd_medidos: >-
+      {{ (_kd_offsets | default({})) | dict2items
+         | rejectattr('value', 'eq', {}) | map(attribute='key') | list }}
     _kd_repl:
-      medida: "{{ (_kd_offsets | default({})) | length == 2 }}"
+      medida: "{{ _kd_medidos | length == 2 }}"
       offsets: "{{ _kd_offsets | default({}) }}"
       grupos: "{{ _kd_grupos | default({}) }}"
       under_replicated: "{{ _kd_urp | default({}) }}"

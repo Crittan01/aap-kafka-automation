@@ -18,9 +18,14 @@
         _nt_desc_sb: >-
           {{ kafka_estado.pasivo | upper }}   Kafka {{ _nt_sb.kafka_version | default('?') }},
           {{ 'Ready' if _nt_sb.kafka_ready | default(false) else 'NO Ready' }}
-        _nt_al_dia: >-
-          {{ kafka_estado.replicacion.offsets[kafka_estado.activo] | default({})
-             == kafka_estado.replicacion.offsets[kafka_estado.pasivo] | default({}) }}
+        # Sin medicion los dos lados son dicts vacios, son iguales, y la
+        # tarjeta diria "al dia" sin haber mirado nada. Se dice que no se midio.
+        _nt_repl: >-
+          {{ 'sin medir' if not kafka_estado.replicacion.medida | default(false) | bool
+             else ('al dia'
+             if kafka_estado.replicacion.offsets[kafka_estado.activo] | default({})
+                == kafka_estado.replicacion.offsets[kafka_estado.pasivo] | default({})
+             else 'CON ATRASO') }}
         _nt_nota_ok: >-
           {{ 'No se modifico nada.' if kafka_plan.nada_que_hacer | bool else
              'Se verificaron los datos: ninguna particion falta y los consumidores conservan su posicion.' }}
@@ -45,7 +50,7 @@
               - [Operacion, "{{ kafka_plan.operacion }} · dejar activo a {{ kafka_plan.direccion | split('_a_') | last | upper }}"]
               - [Sitio activo, "{{ _nt_desc_sa }}"]
               - [Sitio destino, "{{ _nt_desc_sb }}"]
-              - [Replicacion, "{{ 'al dia' if _nt_al_dia else 'CON ATRASO' }}"]
+              - [Replicacion, "{{ _nt_repl }}"]
               - [Validaciones, "{{ 'no aplican: no hay nada que hacer' if kafka_plan.nada_que_hacer | bool else 'todas superadas' }}"]
             mostrar_datos: true
             mostrar_acciones: true
