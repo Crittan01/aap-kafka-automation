@@ -147,3 +147,27 @@
             name: kafka_decide
           vars:
             modo: verificar
+
+        - name: Avisar el resultado verificado
+          ansible.builtin.include_role:
+            name: notificar
+          vars:
+            tipo: resultado
+
+      # Si algo se detuvo a mitad, el ambiente quedo parcial. Se vuelve a
+      # establecer el estado para poder decir donde quedo, se avisa, y recien
+      # ahi se propaga el fallo: el job tiene que terminar en fallido igual.
+      rescue:
+        - name: Establecer donde quedo el ambiente
+          ansible.builtin.include_role:
+            name: kafka_discover
+
+        - name: Avisar que la ejecucion se detuvo
+          ansible.builtin.include_role:
+            name: notificar
+          vars:
+            tipo: fallo
+
+        - name: Propagar el fallo
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('La ejecucion se detuvo. Revisar el log.') }}"

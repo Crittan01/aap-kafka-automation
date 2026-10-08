@@ -10,3 +10,5 @@
     - role: kafka_discover
     - role: kafka_decide
       modo: proponer
+    - role: notificar
+      tipo: propuesta

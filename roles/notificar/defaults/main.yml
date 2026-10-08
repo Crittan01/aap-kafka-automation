@@ -1,0 +1,6 @@
+---
+# URL del webhook del canal. Llega desde una credencial de AAP.
+# Vacia = no se notifica y el playbook sigue igual.
+teams_webhook_url: ""
+
+notificar_timeout: 15

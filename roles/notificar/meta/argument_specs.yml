@@ -1,0 +1,20 @@
+---
+argument_specs:
+  main:
+    short_description: Publica una tarjeta en el canal de Teams
+    description:
+      - Nunca hace fallar al playbook. Si el canal no responde, lo deja en el log y sigue.
+      - Con teams_webhook_url vacia no hace nada, para poder correr sin Teams.
+    options:
+      tipo:
+        type: str
+        required: true
+        choices: [propuesta, resultado, fallo]
+        description: Que tarjeta publicar
+      teams_webhook_url:
+        type: str
+        description: URL del webhook del canal
+      notificar_timeout:
+        type: int
+        default: 15
+        description: Segundos de espera antes de darse por vencido

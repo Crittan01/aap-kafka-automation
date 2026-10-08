@@ -1,0 +1,22 @@
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.2",
+      "body": [
+        { "type": "TextBlock", "text": {{ ("Kafka DR · pareja " ~ pareja) | to_json }}, "weight": "Bolder", "size": "Medium", "wrap": true },
+        { "type": "TextBlock", "text": {{ _nt.estado | to_json }}, "color": {{ _nt.color | to_json }}, "weight": "Bolder", "wrap": true },
+        { "type": "FactSet", "facts": [
+{% for h in _nt.hechos %}
+          { "title": {{ h[0] | to_json }}, "value": {{ h[1] | to_json }} }{{ "," if not loop.last }}
+{% endfor %}
+        ] },
+        { "type": "TextBlock", "text": {{ _nt.nota | to_json }}, "wrap": true, "isSubtle": true }
+      ]
+    }
+  }]
+}
