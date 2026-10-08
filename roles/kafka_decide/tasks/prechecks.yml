@@ -96,6 +96,6 @@
     that: parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] not in kafka_estado.sitios[_dc_sa].proxy_destinos_rotos
     fail_msg: >-
       El KafkaService {{ parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] }} del proxy de {{ _dc_sa }}
-      no resuelve. El failover fallaria al conmutar el trafico.
+      no resuelve. La operacion fallaria al conmutar el trafico.
     success_msg: "destino del proxy {{ parejas[pareja].proxy[_dc_sa].destinos[_dc_sb] }} resuelve"
   when: "'proxy_destino_b_resuelve' in _dc_t.prechecks"

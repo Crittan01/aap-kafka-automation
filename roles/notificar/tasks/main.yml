@@ -31,7 +31,7 @@
         # cluster que no manda. Las otras dos formas no son novedad. Apuntar a
         # su propio sitio es lo normal, incluso cuando ese sitio es el pasivo,
         # porque ahi las aplicaciones estan en cero. Y apuntar al activo sin
-        # ser su sitio es el redirect que hace el failover a proposito, para
+        # ser su sitio es el redirect que hace la operacion a proposito, para
         # que quien siga entrando por el sitio que salio llegue a los datos.
         # Deshacerlo es parte del failback, que todavia no esta construido.
         _nt_px_fuera: >-

@@ -1,5 +1,5 @@
 ---
 # proponer = valida y arma el plan | verificar = compara el estado final
 modo: proponer
-operacion: failover
+operacion: rotacion
 transiciones_file: "{{ playbook_dir }}/../transitions.yml"

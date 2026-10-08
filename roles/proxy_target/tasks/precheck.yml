@@ -1,6 +1,6 @@
 ---
 # El KafkaService destino debe resolver antes de tocar el trafico.
-# Sin esto el failover corta el trafico y despues falla.
+# Sin esto la operacion corta el trafico y despues falla.
 
 - name: Consultar el KafkaService destino
   kubernetes.core.k8s_info:

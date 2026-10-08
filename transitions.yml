@@ -1,23 +1,34 @@
 ---
 # Contrato de transiciones permitidas. Toda combinacion ausente es HARD STOP.
 # sitio_a = activo actual (descubierto); sitio_b = el otro.
+#
+# Agregar una operacion es agregar un bloque aca. Ningun rol bifurca por el
+# nombre de la operacion: kafka_decide elige la transicion por 'operacion' mas
+# 'aplica_a', y los roles ejecutan las acciones que el plan les deja.
 
-version: 1
+version: 2
 
 transiciones:
 
-  - id: FAILOVER
-    descripcion: El sitio activo no esta disponible; el pasivo asume.
-    operacion: failover
+  # Seccion 3 del procedimiento operativo de BPD: inversion planificada de
+  # roles con los dos sitios sanos. No es el failover de la seccion 2.1, que
+  # supone el sitio activo caido y pide un estado final distinto: la matriz de
+  # decision de la seccion 6 marca CO->CA en OFF para failover y en PASIVO
+  # para rotacion. Mientras el failover con sitio caido siga trabado en
+  # decisiones de BPD, 'failover' no tiene transicion y se detiene solo.
+  - id: ROTACION
+    descripcion: Inversion planificada de roles entre dos sitios sanos.
+    operacion: rotacion
     aplica_a:
       - core
 
+    # El destino de los proxies no es condicion de partida: la rotacion los
+    # lleva a los dos al sitio activo, asi que corrige el que venga torcido.
     desde:
       activo: sitio_a
       mirrormakers:
         hacia_b: ACTIVO
         hacia_a: PASIVO
-      proxy_destino: sitio_a
 
     prechecks:
       - sitio_b_kafka_ready
@@ -27,6 +38,8 @@ transiciones:
       - proxy_destino_b_resuelve
       - sitio_b_alcanzable
 
+    # El orden importa: primero se apaga la replicacion para no dejar un loop,
+    # despues se mueve el trafico, y al final se escalan las aplicaciones.
     acciones:
       - rol: mm2_state
         sentido: hacia_b
@@ -34,8 +47,14 @@ transiciones:
       - rol: mm2_state
         sentido: hacia_a
         estado: ACTIVO
+      # Los dos proxies quedan apuntando al sitio activo. El resumen de URLs
+      # de la seccion 5.2 lo declara asi para cada escenario, y el paso 4 de
+      # la seccion 2.3.2 es justamente devolver el proxy del sitio que vuelve.
       - rol: proxy_target
         sitio: sitio_a
+        destino: sitio_b
+      - rol: proxy_target
+        sitio: sitio_b
         destino: sitio_b
       - rol: app_scale
         sitio: sitio_a
@@ -57,6 +76,7 @@ transiciones:
       mirrormakers:
         hacia_b: PASIVO
         hacia_a: ACTIVO
+      # Los dos, no solo el del sitio que sale.
       proxy_destino: sitio_b
 
 politica_estado_desconocido:

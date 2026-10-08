@@ -28,7 +28,7 @@ parejas:
         namespace: core-co
         name: mirrormaker2-ca-to-co
 
-    # Kroxylicious. Un proxy por sitio; el failover cambia targetKafkaServiceRef.
+    # Kroxylicious. Un proxy por sitio; la operacion cambia targetKafkaServiceRef.
     proxy:
       co:
         namespace: core-co

@@ -10,7 +10,7 @@
       proponer. Revisar el orden de los roles en el playbook.
   when: kafka_plan is not defined
 
-# Los sitios salen del plan, no del estado nuevo: despues del failover el
+# Los sitios salen del plan, no del estado nuevo: despues de la operacion el
 # activo cambio y re-derivarlos invertiria la expectativa.
 - name: Recuperar sitios del plan aprobado
   ansible.builtin.set_fact:
@@ -28,15 +28,39 @@
       - kafka_estado.activo == _dc_esp_activo
       - kafka_estado.mirrormakers[_dc_mm_hacia_b].estado == _dc_esp.mirrormakers.hacia_b
       - kafka_estado.mirrormakers[_dc_mm_hacia_a].estado == _dc_esp.mirrormakers.hacia_a
-      - kafka_estado.sitios[_dc_sa].proxy_destino_sitio == _dc_esp_activo
     fail_msg: |
       El estado final no coincide con el esperado por la transicion {{ _dc_t.id }}.
       activo        esperado={{ _dc_esp_activo }}  encontrado={{ kafka_estado.activo }}
       {{ _dc_mm_hacia_b }}  esperado={{ _dc_esp.mirrormakers.hacia_b }}  encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_b].estado }}
       {{ _dc_mm_hacia_a }}  esperado={{ _dc_esp.mirrormakers.hacia_a }}  encontrado={{ kafka_estado.mirrormakers[_dc_mm_hacia_a].estado }}
-      proxy {{ _dc_sa }}   esperado={{ _dc_esp_activo }}  encontrado={{ kafka_estado.sitios[_dc_sa].proxy_destino_sitio }}
-      proxy {{ _dc_sb }}   informativo: {{ kafka_estado.sitios[_dc_sb].proxy_destino_sitio }}
     success_msg: "Estado final correcto: activo={{ kafka_estado.activo }}"
+
+# Se exige de los dos proxies, no solo del que la transicion conmuta. Quien
+# entra por cualquiera de los dos tiene que terminar en el sitio activo: es lo
+# que declara el resumen de URLs del procedimiento operativo para cada
+# escenario. Antes se exigia uno y del otro solo se avisaba, y asi una rotacion
+# de ida y vuelta dejaba el proxy del sitio que volvia atendiendo contra el
+# pasivo. La condicion se evalua solo si la transicion declara donde van.
+- name: Verificar a donde lleva cada proxy
+  vars:
+    _dc_esp: "{{ _dc_t.hasta }}"
+    _dc_esp_activo: "{{ _dc_sb if _dc_esp.activo == 'sitio_b' else _dc_sa }}"
+    _dc_px_mal: >-
+      {{ kafka_estado.sitios | dict2items
+         | rejectattr('value.proxy_destino_sitio', 'eq', _dc_esp_activo)
+         | map(attribute='key') | list }}
+  ansible.builtin.assert:
+    that:
+      - _dc_px_mal | length == 0
+    fail_msg: >-
+      El proxy de {{ _dc_px_mal | join(' y el de ') }} no lleva al sitio activo
+      {{ _dc_esp_activo }}: quien entre por ahi queda contra otro cluster.
+      {% for s, d in kafka_estado.sitios.items() %}
+      proxy {{ s }} -> {{ d.proxy_destino_sitio | default('?') }}
+      {% endfor %}
+    success_msg: >-
+      Los dos proxies llevan al sitio activo {{ _dc_esp_activo }}
+  when: _dc_esp.proxy_destino is defined
 
 # El estado de configuracion no alcanza: hay que comprobar que los datos
 # sobrevivieron y que los consumidores conservan su posicion.
@@ -82,13 +106,3 @@
   loop_control:
     label: "{{ item.key }}"
   when: kafka_plan.datos_previos is defined
-
-# FAILOVER solo declara el proxy del sitio que deja de ser activo. Si el otro
-# quedo redirigido se avisa, pero no se bloquea: devolverlo es parte del
-# failback, que es otra transicion.
-- name: Avisar si el proxy del otro sitio quedo redirigido
-  ansible.builtin.debug:
-    msg: >-
-      El proxy de {{ _dc_sb }} apunta a {{ kafka_estado.sitios[_dc_sb].proxy_destino_sitio }},
-      fuera de su sitio. Se devuelve en el failback.
-  when: kafka_estado.sitios[_dc_sb].proxy_redirigido | default(false) | bool

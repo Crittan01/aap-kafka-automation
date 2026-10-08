@@ -1,53 +1,17 @@
 ---
-# Conmuta el destino del proxy. Un patch de targetKafkaServiceRef.
+# Conmuta el destino de cada proxy que el plan nombre. Idempotente: es un
+# patch de targetKafkaServiceRef.
+#
+# El plan puede nombrar mas de un proxy. El procedimiento operativo de BPD lo
+# declara escenario por escenario en su resumen de URLs: el proxy apunta al
+# Kafka del sitio activo, sea normal, failover o rotacion. Con un proxy por
+# sitio eso son dos conmutaciones, la del sitio que sale y la del que llega.
+# Antes el rol tomaba la primera accion y daba por hecho sitio_a -> sitio_b,
+# asi que el proxy del sitio que llegaba se quedaba como estuviera.
 
-- name: Resolver la conmutacion
-  vars:
-    _pt_acc: "{{ kafka_plan.acciones | selectattr('rol', 'eq', 'proxy_target') | first | default({}, true) }}"
-  ansible.builtin.set_fact:
-    _pt_hay_accion: "{{ _pt_acc | length > 0 }}"
-    _pt_px: "{{ parejas[pareja].proxy[kafka_plan.sitio_a] }}"
-    _pt_sitio: "{{ kafka_plan.sitio_a }}"
-    _pt_destino: "{{ parejas[pareja].proxy[kafka_plan.sitio_a].destinos[kafka_plan.sitio_b] }}"
-
-- name: Verificar el destino antes de conmutar
-  ansible.builtin.include_tasks: precheck.yml
-  when: _pt_hay_accion | bool
-
-- name: Conmutar el proxy al KafkaService {{ _pt_destino }}
-  kubernetes.core.k8s:
-    api_version: "{{ api_versions.kroxylicious }}"
-    kind: VirtualKafkaCluster
-    name: "{{ _pt_px.vkc }}"
-    namespace: "{{ _pt_px.namespace }}"
-    state: patched
-    definition:
-      spec:
-        targetKafkaServiceRef:
-          name: "{{ _pt_destino }}"
-    host: "{{ parejas[pareja].sitios[_pt_sitio].api }}"
-    api_key: "{{ kafka_tokens[_pt_sitio] }}"
-    validate_certs: "{{ kafka_validate_certs }}"
-  when: _pt_hay_accion | bool
-
-- name: Esperar que el proxy reconcilie
-  kubernetes.core.k8s_info:
-    api_version: "{{ api_versions.kroxylicious }}"
-    kind: VirtualKafkaCluster
-    name: "{{ _pt_px.vkc }}"
-    namespace: "{{ _pt_px.namespace }}"
-    host: "{{ parejas[pareja].sitios[_pt_sitio].api }}"
-    api_key: "{{ kafka_tokens[_pt_sitio] }}"
-    validate_certs: "{{ kafka_validate_certs }}"
-  register: _pt_w
-  until: >-
-    ((_pt_w.resources | first).spec.targetKafkaServiceRef.name | default('')) == _pt_destino
-    and ((_pt_w.resources | first).status.conditions | default([])
-         | selectattr('type', 'eq', 'ResolvedRefs') | map(attribute='status')
-         | first | default('')) == 'True'
-  retries: "{{ (umbrales.proxy_ready_timeout / umbrales.proxy_ready_intervalo) | int }}"
-  delay: "{{ umbrales.proxy_ready_intervalo }}"
-  changed_when: false
-  when:
-    - _pt_hay_accion | bool
-    - not ansible_check_mode
+- name: Conmutar cada proxy del plan
+  ansible.builtin.include_tasks: conmutar.yml
+  loop: "{{ kafka_plan.acciones | selectattr('rol', 'eq', 'proxy_target') | list }}"
+  loop_control:
+    loop_var: _pt_acc
+    label: "{{ _pt_acc.sitio }} -> {{ _pt_acc.destino }}"

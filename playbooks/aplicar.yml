@@ -1,15 +1,17 @@
 ---
-# Failover de una pareja. Revalida antes de escribir: entre la aprobacion
-# del operador y esta ejecucion pudo cambiar el estado.
+# Aplica la operacion aprobada sobre una pareja. No sabe cual es: ejecuta las
+# acciones que el plan le deja, en el orden en que el contrato las declara.
+# Revalida antes de escribir, porque entre la aprobacion del operador y esta
+# ejecucion pudo cambiar el estado.
 #
 # exigir_plan_aprobado declara si esta corrida viene de un workflow con
 # aprobacion. El Job Template de AAP lo pone en true; suelto queda en false.
 # Asi la diferencia de comportamiento es declarada, no inferida: si se espera
 # un plan aprobado y no llega, falla en vez de saltearse en silencio.
 #
-# ansible-playbook playbooks/failover.yml -e pareja=core -e direccion=co_a_ca
+# ansible-playbook playbooks/aplicar.yml -e pareja=core -e operacion=rotacion -e direccion=co_a_ca
 
-- name: Ejecutar failover
+- name: Aplicar la operacion aprobada
   hosts: localhost
   gather_facts: false
 

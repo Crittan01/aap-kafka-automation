@@ -111,7 +111,7 @@
         offsets: "{{ kafka_estado.replicacion.offsets[_dc_sa] | default({}) }}"
         grupos: "{{ kafka_estado.replicacion.grupos[_dc_sa] | default({}) }}"
 
-# wf_kafka_plan viaja al siguiente Job Template del workflow. El failover lo
+# wf_kafka_plan viaja al siguiente Job Template del workflow. La ejecucion lo
 # compara contra el plan que recalcula, para no ejecutar algo distinto de lo
 # que el operador aprobo.
 - name: Publicar el plan como artifact del workflow

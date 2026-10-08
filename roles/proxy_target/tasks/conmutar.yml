@@ -1,0 +1,50 @@
+---
+- name: Resolver la conmutacion
+  vars:
+    _pt_s: "{{ kafka_plan.sitio_a if _pt_acc.sitio == 'sitio_a' else kafka_plan.sitio_b }}"
+    _pt_d: "{{ kafka_plan.sitio_a if _pt_acc.destino == 'sitio_a' else kafka_plan.sitio_b }}"
+  ansible.builtin.set_fact:
+    _pt_sitio: "{{ _pt_s }}"
+    _pt_px: "{{ parejas[pareja].proxy[_pt_s] }}"
+    _pt_destino: "{{ parejas[pareja].proxy[_pt_s].destinos[_pt_d] }}"
+    # Las dos conmutaciones de una rotacion pueden tener el mismo destino, asi
+    # que el nombre de la tarea lleva tambien de que sitio es el proxy.
+    _pt_rotulo: "{{ _pt_s }} hacia {{ parejas[pareja].proxy[_pt_s].destinos[_pt_d] }}"
+
+- name: Verificar el destino antes de conmutar
+  ansible.builtin.include_tasks: precheck.yml
+
+- name: Conmutar el proxy de {{ _pt_rotulo }}
+  kubernetes.core.k8s:
+    api_version: "{{ api_versions.kroxylicious }}"
+    kind: VirtualKafkaCluster
+    name: "{{ _pt_px.vkc }}"
+    namespace: "{{ _pt_px.namespace }}"
+    state: patched
+    definition:
+      spec:
+        targetKafkaServiceRef:
+          name: "{{ _pt_destino }}"
+    host: "{{ parejas[pareja].sitios[_pt_sitio].api }}"
+    api_key: "{{ kafka_tokens[_pt_sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+
+- name: Esperar que reconcilie el proxy de {{ _pt_rotulo }}
+  kubernetes.core.k8s_info:
+    api_version: "{{ api_versions.kroxylicious }}"
+    kind: VirtualKafkaCluster
+    name: "{{ _pt_px.vkc }}"
+    namespace: "{{ _pt_px.namespace }}"
+    host: "{{ parejas[pareja].sitios[_pt_sitio].api }}"
+    api_key: "{{ kafka_tokens[_pt_sitio] }}"
+    validate_certs: "{{ kafka_validate_certs }}"
+  register: _pt_w
+  until: >-
+    ((_pt_w.resources | first).spec.targetKafkaServiceRef.name | default('')) == _pt_destino
+    and ((_pt_w.resources | first).status.conditions | default([])
+         | selectattr('type', 'eq', 'ResolvedRefs') | map(attribute='status')
+         | first | default('')) == 'True'
+  retries: "{{ (umbrales.proxy_ready_timeout / umbrales.proxy_ready_intervalo) | int }}"
+  delay: "{{ umbrales.proxy_ready_intervalo }}"
+  changed_when: false
+  when: not ansible_check_mode

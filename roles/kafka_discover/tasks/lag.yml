@@ -13,7 +13,7 @@
 # que abrir el canal cuesta unos 4s. Con un topico y un grupo la diferencia
 # queda sepultada bajo esa varianza. Lo que se gana es que el costo deje de
 # crecer con el inventario: con los topicos y grupos reales de BPD serian N
-# mas M mas una invocaciones por sitio, y el failover descubre dos veces.
+# mas M mas una invocaciones por sitio, y la ejecucion descubre dos veces.
 #
 # La regex va anclada y con los nombres escapados: selecciona exactamente los
 # topicos declarados. Un comodin traeria los internos de Kafka y los de
