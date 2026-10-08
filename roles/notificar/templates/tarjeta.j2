@@ -1,3 +1,9 @@
+{#- Tarjeta para Teams. El formato vive aca; la tarea solo decide que mostrar. -#}
+{%- set sa = kafka_plan.sitio_a | default('') -%}
+{%- set sb = kafka_plan.sitio_b | default('') -%}
+{%- set off = kafka_estado.replicacion.offsets | default({}) -%}
+{%- set grp = kafka_estado.replicacion.grupos | default({}) -%}
+{%- set prev = kafka_plan.datos_previos | default({}) -%}
 {
   "type": "message",
   "attachments": [{
@@ -8,13 +14,84 @@
       "type": "AdaptiveCard",
       "version": "1.2",
       "body": [
-        { "type": "TextBlock", "text": {{ ("Kafka DR · pareja " ~ pareja) | to_json }}, "weight": "Bolder", "size": "Medium", "wrap": true },
-        { "type": "TextBlock", "text": {{ _nt.estado | to_json }}, "color": {{ _nt.color | to_json }}, "weight": "Bolder", "wrap": true },
+        { "type": "TextBlock", "text": {{ ("Kafka DR · pareja " ~ pareja | upper) | to_json }},
+          "weight": "Bolder", "size": "Medium", "wrap": true },
+        { "type": "TextBlock", "text": {{ _nt.estado | to_json }},
+          "color": {{ _nt.color | to_json }}, "weight": "Bolder", "wrap": true }
+{%- if _nt.hechos %},
         { "type": "FactSet", "facts": [
-{% for h in _nt.hechos %}
+{%- for h in _nt.hechos %}
           { "title": {{ h[0] | to_json }}, "value": {{ h[1] | to_json }} }{{ "," if not loop.last }}
-{% endfor %}
-        ] },
+{%- endfor %}
+        ] }
+{%- endif %}
+
+{#- ─── Datos: offsets y marcadores, por particion y por grupo ─── -#}
+{%- if _nt.mostrar_datos | default(false) and kafka_estado.replicacion.medida | default(false) %},
+        { "type": "TextBlock", "text": "DATOS", "weight": "Bolder", "size": "Small", "spacing": "Medium", "wrap": true },
+{%- set lineas = [] -%}
+{%- for part, v in (off[sa] | default({})).items() -%}
+  {%- set _ = lineas.append(part ~ "   " ~ sa | upper ~ " " ~ v ~ "  ·  " ~ sb | upper ~ " " ~ (off[sb] | default({})).get(part, "?")) -%}
+{%- endfor -%}
+{%- for clave, v in (grp[sa] | default({})).items() -%}
+  {%- set _ = lineas.append(clave | replace("|", "  ") ~ "   " ~ sa | upper ~ " marcador " ~ v ~ "  ·  " ~ sb | upper ~ " marcador " ~ (grp[sb] | default({})).get(clave, "?")) -%}
+{%- endfor %}
+        { "type": "TextBlock", "text": {{ (lineas | join("\n")) | to_json }},
+          "fontType": "Monospace", "size": "Small", "wrap": true }
+{%- endif %}
+
+{#- ─── Comparacion antes/ahora, para el resultado ─── -#}
+{%- if _nt.mostrar_verificacion | default(false) and prev.offsets | default({}) %},
+        { "type": "TextBlock", "text": "DATOS VERIFICADOS", "weight": "Bolder", "size": "Small", "spacing": "Medium", "wrap": true },
+{%- set ver = [] -%}
+{%- for part, antes in prev.offsets.items() -%}
+  {%- set ahora = (off[sb] | default({})).get(part, "?") -%}
+  {%- set _ = ver.append(part ~ "   antes " ~ antes ~ "  →  ahora " ~ ahora ~ ("   sin perdida" if ahora | string == antes | string else "")) -%}
+{%- endfor -%}
+{%- for clave, antes in (prev.grupos | default({})).items() -%}
+  {%- set _ = ver.append(clave | replace("|", "  ") ~ "   marcador " ~ antes ~ " conservado") -%}
+{%- endfor %}
+        { "type": "TextBlock", "text": {{ (ver | join("\n")) | to_json }},
+          "fontType": "Monospace", "size": "Small", "wrap": true }
+{%- endif %}
+
+{#- ─── Las acciones del plan, con nombres reales ─── -#}
+{%- if _nt.mostrar_acciones | default(false) and kafka_plan.acciones %},
+        { "type": "TextBlock", "text": "VOY A HACER", "weight": "Bolder", "size": "Small", "spacing": "Medium", "wrap": true },
+{%- set acc = [] -%}
+{%- for a in kafka_plan.acciones -%}
+  {%- set n = loop.index | string ~ "  " -%}
+  {%- if a.rol == 'mm2_state' -%}
+    {%- set mm = kafka_plan.mm_hacia_b if a.sentido == 'hacia_b' else kafka_plan.mm_hacia_a -%}
+    {%- set _ = acc.append(n ~ "replicacion " ~ mm ~ "  →  " ~ a.estado) -%}
+  {%- elif a.rol == 'proxy_target' -%}
+    {%- set _ = acc.append(n ~ "proxy " ~ sa | upper ~ "  →  Kafka de " ~ sb | upper) -%}
+  {%- else -%}
+    {%- set s = sa if a.sitio == 'sitio_a' else sb -%}
+    {%- set apps = [] -%}
+    {%- for app in parejas[pareja].aplicaciones[s] | default([]) -%}
+      {%- set _ = apps.append(app.nombre ~ " a " ~ app.replicas[a.estado] | string) -%}
+    {%- endfor -%}
+    {%- set _ = acc.append(n ~ "consumidores en " ~ s | upper ~ "  →  " ~ apps | join(", ")) -%}
+  {%- endif -%}
+{%- endfor %}
+        { "type": "TextBlock", "text": {{ (acc | join("\n")) | to_json }},
+          "fontType": "Monospace", "size": "Small", "wrap": true }
+{%- endif %}
+
+{#- ─── Como quedo el ambiente, para el fallo ─── -#}
+{%- if _nt.mostrar_ambiente | default(false) %},
+        { "type": "TextBlock", "text": "COMO QUEDO EL AMBIENTE", "weight": "Bolder", "size": "Small", "spacing": "Medium", "wrap": true },
+{%- set amb = [] -%}
+{%- for m, d in (kafka_estado.mirrormakers | default({})).items() -%}
+  {%- set _ = amb.append("replicacion " ~ m ~ "   " ~ d.estado ~ "   vive en " ~ d.vive_en) -%}
+{%- endfor -%}
+{%- for s, d in (kafka_estado.sitios | default({})).items() -%}
+  {%- set _ = amb.append("proxy " ~ s | upper ~ "          →  " ~ (d.proxy_destino | default('?'))) -%}
+{%- endfor %}
+        { "type": "TextBlock", "text": {{ (amb | join("\n")) | to_json }},
+          "fontType": "Monospace", "size": "Small", "wrap": true }
+{%- endif %},
         { "type": "TextBlock", "text": {{ _nt.nota | to_json }}, "wrap": true, "isSubtle": true }
       ]
     }

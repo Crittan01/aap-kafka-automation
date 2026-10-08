@@ -10,13 +10,20 @@
 
     - name: Armar el contenido de la tarjeta
       vars:
+        _nt_sa: "{{ kafka_estado.sitios[kafka_estado.activo] | default({}) }}"
+        _nt_sb: "{{ kafka_estado.sitios[kafka_estado.pasivo] | default({}) }}"
+        _nt_desc_sa: >-
+          {{ kafka_estado.activo | upper }}   Kafka {{ _nt_sa.kafka_version | default('?') }},
+          {{ 'Ready' if _nt_sa.kafka_ready | default(false) else 'NO Ready' }}
+        _nt_desc_sb: >-
+          {{ kafka_estado.pasivo | upper }}   Kafka {{ _nt_sb.kafka_version | default('?') }},
+          {{ 'Ready' if _nt_sb.kafka_ready | default(false) else 'NO Ready' }}
         _nt_al_dia: >-
           {{ kafka_estado.replicacion.offsets[kafka_estado.activo] | default({})
              == kafka_estado.replicacion.offsets[kafka_estado.pasivo] | default({}) }}
         _nt_nota_ok: >-
           {{ 'No se modifico nada.' if kafka_plan.nada_que_hacer | bool else
-             'Se verificaron los datos: ninguna particion falta y los
-              consumidores conservan su posicion.' }}
+             'Se verificaron los datos: ninguna particion falta y los consumidores conservan su posicion.' }}
         _nt_mms: >-
           {{ (kafka_estado.mirrormakers | default({}) | dict2items
               | map(attribute='key') | zip(kafka_estado.mirrormakers | default({}) | dict2items
@@ -35,18 +42,21 @@
             estado: "{{ _nt_titulo_prop }}"
             color: "{{ 'Accent' if kafka_plan.nada_que_hacer | bool else 'Warning' }}"
             hechos:
-              - [Direccion, "dejar activo a {{ kafka_plan.direccion | split('_a_') | last }}"]
-              - [Estado encontrado, "activo: {{ kafka_estado.activo }}   pasivo: {{ kafka_estado.pasivo }}"]
+              - [Operacion, "{{ kafka_plan.operacion }} · dejar activo a {{ kafka_plan.direccion | split('_a_') | last | upper }}"]
+              - [Sitio activo, "{{ _nt_desc_sa }}"]
+              - [Sitio destino, "{{ _nt_desc_sb }}"]
               - [Replicacion, "{{ 'al dia' if _nt_al_dia else 'CON ATRASO' }}"]
-              - [Acciones, "{{ kafka_plan.acciones | length }} a aplicar"]
+              - [Validaciones, "{{ 'no aplican: no hay nada que hacer' if kafka_plan.nada_que_hacer | bool else 'todas superadas' }}"]
+            mostrar_datos: true
+            mostrar_acciones: true
             nota: "{{ _nt_nota_prop }}"
           resultado:
-            estado: "{{ 'Sin cambios: ya se estaba en el destino' if kafka_plan.nada_que_hacer | bool else 'Operacion completada y verificada' }}"
+            estado: "{{ 'Sin cambios: ya se estaba en el destino' if kafka_plan.nada_que_hacer | bool else 'Completado y verificado' }}"
             color: Good
             hechos:
-              - [Direccion, "{{ kafka_plan.sitio_a }} -> {{ kafka_plan.sitio_b }}"]
-              - [Estado alcanzado, "activo: {{ kafka_estado.activo }}"]
+              - [Estado alcanzado, "activo: {{ kafka_estado.activo | upper }}   pasivo: {{ kafka_estado.pasivo | upper }}"]
               - [Acciones aplicadas, "{{ kafka_plan.acciones | length }}"]
+            mostrar_verificacion: true
             nota: "{{ _nt_nota_ok }}"
           fallo:
             estado: "La ejecucion se detuvo"
@@ -54,9 +64,12 @@
             hechos:
               - [Fallo en, "{{ ansible_failed_task.name | default('(desconocida)') }}"]
               - [Motivo, "{{ (ansible_failed_result.msg | default('sin detalle')) | replace('\n', ' ') | truncate(200) }}"]
-              - [Ambiente ahora, "activo: {{ kafka_estado.activo | default('no determinado') }}"]
-              - [Replicaciones, "{{ _nt_mms }}"]
-            nota: "Revisar el ambiente antes de reintentar."
+            mostrar_ambiente: true
+            nota: >-
+              El ambiente puede haber quedado a medias. Revisar antes de reintentar:
+              un reintento se niega solo si el estado no es reconocible.
+              El estado de las aplicaciones no se refleja arriba porque el
+              descubrimiento no las consulta.
       ansible.builtin.set_fact:
         _nt: "{{ _nt_variantes[tipo] }}"
 
