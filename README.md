@@ -9,9 +9,13 @@ La decisión de ejecutarlo sigue siendo del operador. Lo que se automatiza es to
 establecer el estado real, verificar que la operación sea posible, aplicarla en el orden correcto
 y confirmar el resultado.
 
+> **Fase 1 — failover del CORE.** Es el primero de seis entregables; los otros cinco son
+> failback, rotación de MirrorMaker, adaptación para Integrations, el Kafka Proxy y la
+> interacción entre CORE e Integrations. Ver [Alcance](#alcance).
+>
 > Opera con **los dos sitios alcanzables**, que es la forma en que el failover se ejecuta de
 > manera planificada o como simulacro. La variante con el sitio activo **realmente caído** es
-> otra operación y no está implementada. Ver [Alcance](#alcance).
+> otra operación y no está implementada.
 
 ---
 
@@ -29,7 +33,7 @@ flowchart TB
         direction LR
         PCO["Proxy CO<br/>➌ apunta a Kafka CO"]
         KCO[("Kafka CO<br/>recibe el tráfico")]
-        ACO["consumidor CO<br/>➍ 1 réplica"]
+        ACO["consumidor CO<br/>➎ 1 réplica"]
         MMA["MirrorMaker ca→co<br/>➋ PASIVO"]
         PCO --> KCO
         KCO --> ACO
@@ -38,11 +42,10 @@ flowchart TB
 
     subgraph CA["CA · pasivo"]
         direction LR
-        PCA["Proxy CA<br/>apunta a Kafka CA"]
+        PCA["Proxy CA<br/>➍ apunta a Kafka CO"]
         KCA[("Kafka CA<br/>copia de respaldo")]
-        ACA["consumidor CA<br/>➎ 0 réplicas"]
+        ACA["consumidor CA<br/>➏ 0 réplicas"]
         MMB["MirrorMaker co→ca<br/>➊ ACTIVO"]
-        PCA --> KCA
         KCA --> ACA
         MMB == "replica" ==> KCA
     end
@@ -50,6 +53,7 @@ flowchart TB
     AAP["AAP · AWX<br/>descubre, decide y aplica<br/>contra la API de cada sitio"]
 
     CLI --> PCO
+    PCA -. "también lleva al activo" .-> KCO
     KCO -. "lee" .-> MMB
     AAP -.-> CO
     AAP -.-> CA
@@ -60,8 +64,8 @@ flowchart TB
     classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
     classDef orquesta fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:2px
 
-    class PCO,KCO,ACO,MMB activo
-    class PCA,ACA,MMA pasivo
+    class PCO,PCA,KCO,ACO,MMB activo
+    class ACA,MMA pasivo
     class KCO,KCA kafka
     class CLI externo
     class AAP orquesta
@@ -82,8 +86,10 @@ donde nace el dato, está donde el dato llega*.
 **El sitio activo se deduce de ahí.** No está configurado en ninguna parte: activo es aquel
 desde el cual se está replicando.
 
-**El destino del proxy no sirve para saber quién está activo.** Para eso se mira qué MirrorMaker
-está encendido: el que replica *desde* el activo.
+**Los dos proxies llevan al sitio activo**, no cada uno a su propio Kafka. Un cliente que entre
+por CA en reposo termina leyendo y escribiendo en el Kafka de CO, que es el que manda. Y por eso
+el destino del proxy tampoco sirve para saber quién está activo: para eso se mira qué MirrorMaker
+está encendido, el que replica *desde* el activo.
 
 ### Lo que el failover cambia, en ese orden
 
@@ -98,10 +104,9 @@ Las acciones del contrato, en el orden en que se aplican:
 | ➎ | El consumidor de CO baja a **0 réplicas** | Primero se detiene el que deja de ser activo |
 | ➏ | El consumidor de CA sube a **1 réplica** | Recién entonces se levanta el que asume. Los dos arriba se pelearían las particiones |
 
-La ➍ parece redundante la primera vez, porque el proxy de CA ya apunta a su propio Kafka.
-Importa en la siguiente: sin ella, el proxy del sitio que vuelve a ser activo se queda apuntando
-al otro, y quien entre por ahí termina atendido contra el clúster pasivo. Al terminar, la
-verificación **exige** que los dos lleven al activo.
+Sin la ➍, el proxy del sitio que vuelve a ser activo se queda apuntando al otro, y quien entre
+por ahí termina atendido contra el clúster pasivo. Al terminar, la verificación **exige** que los
+dos lleven al activo; si alguno no llega, la operación falla.
 
 ### Así queda al terminar
 
@@ -114,7 +119,7 @@ flowchart TB
         direction LR
         PCO["Proxy CO<br/>➌ apunta a Kafka CA"]
         KCO[("Kafka CO<br/>copia de respaldo")]
-        ACO["consumidor CO<br/>➍ 0 réplicas"]
+        ACO["consumidor CO<br/>➎ 0 réplicas"]
         MMA["MirrorMaker ca→co<br/>➋ ACTIVO"]
         KCO --> ACO
         MMA == "replica" ==> KCO
@@ -122,9 +127,9 @@ flowchart TB
 
     subgraph CA["CA · ACTIVO"]
         direction LR
-        PCA["Proxy CA<br/>apunta a Kafka CA"]
+        PCA["Proxy CA<br/>➍ apunta a Kafka CA"]
         KCA[("Kafka CA<br/>recibe el tráfico")]
-        ACA["consumidor CA<br/>➎ 1 réplica"]
+        ACA["consumidor CA<br/>➏ 1 réplica"]
         MMB["MirrorMaker co→ca<br/>➊ PASIVO"]
         PCA --> KCA
         KCA --> ACA
@@ -145,8 +150,8 @@ flowchart TB
     classDef externo  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
     classDef orquesta fill:#f7d9cf,stroke:#a13d12,color:#111827,stroke-width:2px
 
-    class PCA,KCA,ACA,MMA activo
-    class PCO,ACO,MMB pasivo
+    class PCO,PCA,KCA,ACA,MMA activo
+    class ACO,MMB pasivo
     class KCO,KCA kafka
     class CLI externo
     class AAP orquesta
@@ -186,9 +191,11 @@ flowchart TD
     REV -->|cambió| S4([Se detiene])
     REV -->|coincide| EX1[Apagar la replicación en curso]
     EX1 --> EX2[Activar la replicación inversa]
-    EX2 --> EX3[Conmutar el destino del tráfico]
-    EX3 --> VER[Verificar el estado final]
+    EX2 --> EX3[Llevar los dos proxies<br/>al sitio activo]
+    EX3 --> EX4[Bajar las aplicaciones del que sale<br/>y levantar las del que asume]
+    EX4 --> VER[Verificar el estado final]
     VER --> FIN([Operación completa])
+    VER -->|no coincide| S5([Se detiene])
 
     classDef paso     fill:#eef2f7,stroke:#5a6474,color:#111827,stroke-width:1px
     classDef decision fill:#e3eaf5,stroke:#2b46ae,color:#111827,stroke-width:1px
@@ -196,9 +203,9 @@ flowchart TD
     classDef aprueba  fill:#fae8c8,stroke:#8a5a00,color:#111827,stroke-width:1.5px
     classDef fin      fill:#cdeadb,stroke:#136c46,color:#111827,stroke-width:1.5px
 
-    class OP,DESC,PROP,EX1,EX2,EX3,VER paso
+    class OP,DESC,PROP,EX1,EX2,EX3,EX4,VER paso
     class COH,VAL,PRE,REV decision
-    class S1,S2,S3,S4 detiene
+    class S1,S2,S3,S4,S5 detiene
     class APR aprueba
     class FIN fin
 ```
@@ -211,13 +218,16 @@ flowchart TD
 | 2 | **Reconocer** | El estado encontrado debe corresponder a una situación conocida. Señales contradictorias —dos replicaciones activas a la vez, un sitio que no responde, un conector caído— interrumpen la operación. |
 | 3 | **Validar la transición** | La operación solicitada debe estar permitida desde el estado actual. El conjunto de transiciones válidas es explícito y acotado. |
 | 4 | **Validaciones previas** | Se comprueban las condiciones necesarias para que la operación pueda completarse: que la dirección declarada por el operador sea la que el descubrimiento encontró, la salud del sitio destino, el estado de la replicación y la alcanzabilidad del destino del tráfico. |
-| 5 | **Proponer** | Se presenta al operador qué se encontró, qué cambios se aplicarán y cómo quedará el ambiente. |
+| 5 | **Proponer** | Se presenta al operador qué se encontró, qué cambios se aplicarán y cómo quedará el ambiente. La propuesta llega también al canal de Teams. |
 | 6 | **Aprobar** | El flujo se detiene. Hasta aquí no se modificó nada. |
 | 7 | **Revalidar** | Antes de la primera escritura se vuelve a establecer el estado y se comprueba que siga coincidiendo con lo aprobado. |
-| 8 | **Ejecutar** | Se apaga la replicación en curso, se activa la inversa y se conmuta el destino del tráfico. En ese orden. |
-| 9 | **Verificar** | Se confirma que el estado alcanzado es el que la transición declaraba. |
+| 8 | **Ejecutar** | Las seis acciones del contrato, en orden: apagar la replicación en curso, activar la inversa, llevar los dos proxies al sitio activo, bajar las aplicaciones del que sale y levantar las del que asume. Cada paso espera a que el recurso reconcilie antes de seguir. |
+| 9 | **Verificar** | Se vuelve a descubrir el estado y se exige lo que la transición declaró: el sitio activo, el estado de cada MirrorMaker, que los dos proxies lleven al activo, que no falte ninguna partición y que los consumidores conserven su posición. Si algo no coincide, la operación falla. El resultado, o el fallo, se publican en el canal. |
 
 Las etapas 1 a 6 no modifican el ambiente. La primera escritura ocurre en la 8.
+
+Si una operación aprobada ya está en su destino, el paso 8 no hace nada y el flujo termina bien:
+estar donde se pidió estar no es un error.
 
 ---
 
@@ -240,11 +250,18 @@ operación.
 La unidad sobre la que opera es una **pareja**: dos clústeres Kafka en sitios opuestos, con sus
 dos MirrorMaker y su proxy.
 
-| | |
-|---|---|
-| **Implementado** | `failover` de una pareja, **con los dos sitios alcanzables**, en cualquiera de las dos direcciones |
-| **No implementado** | Failover con el sitio activo **realmente caído**. El estado encontrado no corresponde a ninguna transición declarada y se detiene sin tocar nada |
-| **Previsto** | Failback con resincronización, rotación de roles, y parejas adicionales |
+| Fase | Entregable | Estado |
+|---|---|---|
+| **1** | **Failover del CORE** | **implementado y certificado**, con los dos sitios alcanzables, en cualquiera de las dos direcciones |
+| 2 | Failback del CORE | pendiente. Exige resincronización de tópicos y una ventana de mantenimiento |
+| 3 | Rotación de MirrorMaker del CORE | pendiente. Agrega la permanencia de la inversión |
+| 4 | Adaptación para Integrations | pendiente. Es agregar una pareja a los datos |
+| 5 | Kafka Proxy | pendiente |
+| 6 | Interacción de CORE con Integrations | pendiente |
+
+Dentro de la fase 1 queda fuera el failover con el sitio activo **realmente caído**: el estado
+encontrado no corresponde a ninguna transición declarada y la operación se detiene sin tocar
+nada.
 
 Incorporar una pareja adicional es agregar un bloque de datos: la automatización no contiene
 referencias a ninguna pareja en particular. Incorporar una operación es agregar un bloque a
@@ -295,9 +312,11 @@ roles/
   mm2_state/             modifica el estado de un MirrorMaker
   proxy_target/          conmuta el destino del tráfico
   app_scale/             ajusta las aplicaciones al rol de su sitio
+  notificar/             publica la tarjeta en el canal de Teams
 ```
 
-De los cinco roles, **tres modifican el ambiente**. Los otros dos consultan y calculan.
+De los seis roles, **tres modifican el ambiente**: `mm2_state`, `proxy_target` y `app_scale`.
+Los otros tres consultan, calculan o informan.
 
 ---
 
@@ -361,6 +380,21 @@ disponible.
 Lleva cada aplicación declarada al número de instancias que corresponde al rol que su sitio
 pasa a tener. Respeta el orden del plan: **primero se detienen las del sitio que deja de ser
 activo**, después se levantan las del que asume. Evita que ambas procesen a la vez.
+
+### `notificar` — publica en el canal de Teams
+
+Envía una tarjeta al canal en tres momentos: la **propuesta** cuando el flujo queda esperando
+aprobación, el **resultado** cuando terminó y verificó, y el **fallo** si se detuvo a mitad.
+
+Cada tarjeta lleva lo que un administrador necesita para decidir sin entrar a AAP: los offsets
+por partición y los marcadores de cada grupo de consumo en los dos sitios, por dónde entra el
+cliente y en qué clúster termina, las acciones concretas que se van a aplicar, y al terminar la
+comparación antes → ahora. Si un proxy quedara llevando al sitio pasivo, lo dice.
+
+**El canal no condiciona la operación.** Todo el rol va dentro de un `rescue`: que Teams no
+responda, o que la propia tarjeta esté mal armada, deja constancia en el log y la operación
+sigue. Una contingencia no se detiene porque falle un aviso. Y si no hay webhook configurado,
+el rol no hace nada.
 
 Qué aplicaciones siguen el rol del sitio es una decisión del ambiente, declarada en los datos.
 Los sistemas que conmutan por su cuenta quedan fuera.
@@ -454,21 +488,22 @@ aprobado sobre un estado distinto del que el operador vio, y distingue dos casos
 - Si el ambiente quedó en cualquier **otra** situación, se detiene con error, porque está en un
   estado que nadie aprobó.
 
-El plan también lleva la **versión del código** que lo produjo. El proyecto se sincroniza antes de
-cada plantilla, así que un cambio publicado mientras el operador decide haría que se ejecute con
-código que nadie revisó. Si la versión no coincide, la ejecución se detiene: la aprobación
-autoriza un plan, y ese plan lo produjo una versión concreta.
+El plan también lleva la **versión del código** que lo produjo. Si la versión con la que se
+ejecuta no coincide, la ejecución se detiene: la aprobación autoriza un plan, y ese plan lo
+produjo una versión concreta. Es la red para el caso en que el proyecto se sincronice mientras
+el operador decide, y haría que se ejecute código que nadie revisó.
 
 ### Objetos requeridos
 
 | Objeto | Función |
 |---|---|
-| Proyecto | Apunta a este repositorio. Conviene sincronizarlo al lanzar, para que cada ejecución use la versión vigente |
+| Proyecto | Apunta a este repositorio. **La sincronización es manual**: después de publicar un cambio hay que sincronizar, o se seguirá ejecutando la versión anterior. A cambio, una caída del repositorio remoto no interrumpe un flujo en curso |
 | Inventario | Un único `localhost`. La automatización corre desde el entorno de ejecución contra las APIs de los clústeres; no hay hosts remotos |
 | Tipo de credencial | Entrega el acceso a cada sitio. **Su creación requiere privilegios de superusuario** en la plataforma; no alcanza con administrar la organización |
 | Credencial | Una por conjunto de sitios, construida sobre el tipo anterior |
 | Plantillas de trabajo | Tres: consulta de estado, validación y ejecución |
 | Flujo de trabajo | Uno por operación: validación → aprobación → ejecución |
+| Credencial del canal | El webhook de Teams, como credencial. No viaja en el código ni en variables sueltas |
 
 Las tres plantillas son genéricas: no contienen la operación ni la pareja. Esos valores llegan
 desde el flujo.
@@ -533,11 +568,14 @@ datos y no repetida en cada tarea.
 | Si el estado o el código cambiaron tras la aprobación | nunca ejecuta lo aprobado sobre algo distinto de lo que el operador vio |
 | Al invertir la replicación | apaga antes de activar, para no duplicar mensajes |
 | Al conmutar el tráfico | verifica el destino antes de cortar el origen |
+| Sobre el tráfico | los dos proxies quedan llevando al sitio activo, y al terminar lo exige |
 | Al mover las aplicaciones | detiene antes de levantar, para que no procesen en paralelo |
 | Tras el cambio | los consumidores retoman en el mensaje donde quedaron |
 | Al terminar | confirma que el estado alcanzado es el declarado |
 | Sobre los datos | comprueba que ninguna partición falte ni haya perdido mensajes |
 | Sobre los consumidores | comprueba que conserven su posición y no reprocesen desde el principio |
+
+| Sobre el aviso | que el canal falle no detiene la operación |
 
 Toda modificación es un cambio de configuración declarativo y reversible. La automatización no
 elimina ni recrea recursos.

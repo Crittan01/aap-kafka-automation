@@ -18,40 +18,28 @@
         _nt_desc_sb: >-
           {{ kafka_estado.pasivo | upper }}   Kafka {{ _nt_sb.kafka_version | default('?') }},
           {{ 'Ready' if _nt_sb.kafka_ready | default(false) else 'NO Ready' }}
-        # Sin medicion los dos lados son dicts vacios, son iguales, y la
-        # tarjeta diria "al dia" sin haber mirado nada. Se dice que no se midio.
+        # Sin medicion los dos lados son dicts vacios, son iguales, y diria
+        # "al dia" sin haber mirado nada.
         _nt_repl: >-
           {{ 'sin medir' if not kafka_estado.replicacion.medida | default(false) | bool
              else ('al dia'
              if kafka_estado.replicacion.offsets[kafka_estado.activo] | default({})
                 == kafka_estado.replicacion.offsets[kafka_estado.pasivo] | default({})
              else 'CON ATRASO') }}
-        # Se avisa por el proxy que quedo redirigido fuera de su sitio Y a dar
-        # al pasivo: las aplicaciones que entran por ahi estan contra el
-        # cluster que no manda. Las otras dos formas no son novedad. Apuntar a
-        # su propio sitio es lo normal, incluso cuando ese sitio es el pasivo,
-        # porque ahi las aplicaciones estan en cero. Y apuntar al activo sin
-        # ser su sitio es el redirect que hace la operacion a proposito, para
-        # que quien siga entrando por el sitio que salio llegue a los datos.
-        # Deshacerlo es parte del failback, que todavia no esta construido.
+        # Solo se avisa por el proxy redirigido que lleva al pasivo: apuntar a
+        # su propio sitio es normal, y apuntar al activo sin ser su sitio es el
+        # redirect de la operacion.
         _nt_px_fuera: >-
           {{ kafka_estado.sitios | default({}) | dict2items
              | rejectattr('value.proxy_destino_sitio', 'eq', kafka_estado.activo)
              | selectattr('value.proxy_redirigido', 'defined')
              | selectattr('value.proxy_redirigido')
              | map(attribute='key') | map('upper') | list }}
-        _nt_uno_px: "{{ _nt_px_fuera | length == 1 }}"
-        _nt_px_sujeto: >-
-          {{ ('el proxy de ' ~ _nt_px_fuera | first ~ ' apunta') if _nt_uno_px | bool
-          else ('los proxies de ' ~ _nt_px_fuera | join(' y ') ~ ' apuntan') }}
         _nt_aviso_px: >-
-          ATENCION: {{ _nt_px_sujeto }} al sitio pasivo, asi que las
-          aplicaciones que entren por {{ 'ahi' if _nt_uno_px | bool else 'ahi' }}
-          leen y escriben contra el cluster que no manda.
-          {{ 'Devolverlo' if _nt_uno_px | bool else 'Devolverlos' }} es parte del failback.
+          ATENCION: {{ _nt_px_fuera | join(' y ') }} lleva{{ '' if _nt_px_fuera | length == 1 else 'n' }}
+          al sitio pasivo.
         _nt_nota_ok: >-
-          {{ ('No se modifico nada.' if kafka_plan.nada_que_hacer | bool else
-              'Se verificaron los datos: ninguna particion falta y los consumidores conservan su posicion.')
+          {{ ('Sin cambios.' if kafka_plan.nada_que_hacer | bool else 'Datos verificados.')
              ~ (' ' ~ _nt_aviso_px if _nt_px_fuera | length > 0 else '') }}
         _nt_mms: >-
           {{ (kafka_estado.mirrormakers | default({}) | dict2items
@@ -63,29 +51,27 @@
              if kafka_plan.nada_que_hacer | bool
              else 'Propuesta de ' ~ kafka_plan.operacion ~ ' — pendiente de aprobacion' }}
         _nt_nota_prop: >-
-          {{ ('No se va a modificar nada.' if kafka_plan.nada_que_hacer | bool
-              else 'Nada se modifico todavia. El flujo espera una decision.')
-             ~ (' ' ~ _nt_aviso_px if _nt_px_fuera | length > 0
-                else (' El estado es coherente.' if kafka_plan.nada_que_hacer | bool else '')) }}
+          {{ ('No se modifica nada.' if kafka_plan.nada_que_hacer | bool
+              else 'Todavia no se modifico nada. Espera tu decision.')
+             ~ (' ' ~ _nt_aviso_px if _nt_px_fuera | length > 0 else '') }}
         _nt_variantes:
           propuesta:
             estado: "{{ _nt_titulo_prop }}"
             color: "{{ 'Accent' if kafka_plan.nada_que_hacer | bool else 'Warning' }}"
             hechos:
               - [Operacion, "{{ kafka_plan.operacion }} · dejar activo a {{ kafka_plan.direccion | split('_a_') | last | upper }}"]
-              # Se nombran por su rol, no por la maniobra. En un no-op el
-              # destino pedido es el sitio activo, asi que llamar "destino" al
-              # pasivo diria algo distinto de lo que el operador pidio.
+              # Por su rol, no por la maniobra: en un no-op el destino pedido
+              # es el activo, y llamar "destino" al pasivo seria falso.
               - [Sitio activo, "{{ _nt_desc_sa }}"]
               - [Sitio pasivo, "{{ _nt_desc_sb }}"]
               - [Replicacion, "{{ _nt_repl }}"]
-              - [Validaciones, "{{ 'no aplican: no hay nada que hacer' if kafka_plan.nada_que_hacer | bool else 'todas superadas' }}"]
+              - [Validaciones, "{{ 'no aplican' if kafka_plan.nada_que_hacer | bool else 'todas superadas' }}"]
             mostrar_datos: true
             mostrar_proxies: true
             mostrar_acciones: "{{ not kafka_plan.nada_que_hacer | bool }}"
             nota: "{{ _nt_nota_prop }}"
           resultado:
-            estado: "{{ 'Sin cambios: ya se estaba en el destino' if kafka_plan.nada_que_hacer | bool else 'Completado y verificado' }}"
+            estado: "{{ 'Sin cambios: ya estaba en el destino' if kafka_plan.nada_que_hacer | bool else 'Completado y verificado' }}"
             color: Good
             hechos:
               - [Estado alcanzado, "activo: {{ kafka_estado.activo | upper }}   pasivo: {{ kafka_estado.pasivo | upper }}"]
@@ -98,13 +84,11 @@
             color: Attention
             hechos:
               - [Fallo en, "{{ ansible_failed_task.name | default('(desconocida)') }}"]
-              - [Motivo, "{{ (ansible_failed_result.msg | default('sin detalle')) | replace('\n', ' ') | truncate(200) }}"]
+              - [Motivo, "{{ (ansible_failed_result.msg | default('sin detalle')) | replace('\n', ' ') | truncate(160) }}"]
             mostrar_ambiente: true
             nota: >-
-              El ambiente puede haber quedado a medias. Revisar antes de reintentar:
-              un reintento se niega solo si el estado no es reconocible.
-              El estado de las aplicaciones no se refleja arriba porque el
-              descubrimiento no las consulta.
+              El ambiente puede haber quedado a medias. Revisar antes de
+              reintentar.
       ansible.builtin.set_fact:
         _nt: "{{ _nt_variantes[tipo] }}"
 
